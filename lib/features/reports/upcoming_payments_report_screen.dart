@@ -47,6 +47,11 @@ class ReportEntry {
   final double capitalPaid;
   final double interestPaid;
   final double moraPaid;
+  // Valores esperados (lo que se debería pagar según la cuota)
+  final double expectedTotal;
+  final double expectedCapital;
+  final double expectedInterest;
+  final double expectedMora;
   final String statusLabel;
   final Color statusColor;
 
@@ -58,13 +63,17 @@ class ReportEntry {
     required this.capitalPaid,
     required this.interestPaid,
     required this.moraPaid,
+    required this.expectedTotal,
+    required this.expectedCapital,
+    required this.expectedInterest,
+    required this.expectedMora,
     required this.statusLabel,
     required this.statusColor,
   });
 }
 
 class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsReportScreen> {
-  final copFormatter = NumberFormat.currency(locale: 'es_CO', symbol: '\$', decimalDigits: 0);
+  final copFormatter = NumberFormat.currency(locale: 'es_CO', symbol: '\$ ', decimalDigits: 0, customPattern: '\u00A4#,##0');
 
   ReportPeriod _selectedPeriod = ReportPeriod.monthly;
   DateTime? _customStartDate;
@@ -260,10 +269,17 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
       final inst = j.installment;
       
       final instPayments = allPayments.where((p) => p.affectedInstallmentNumbers.contains(inst.installmentNumber) && p.creditId == j.credit.creditId).toList();
+      // Ordenar cronológicamente (del más antiguo al más reciente) para descontar saldos correctamente
+      instPayments.sort((a, b) => a.paymentDate.compareTo(b.paymentDate));
       
       double totalCapitalPaidSoFar = 0.0;
       double totalInterestPaidSoFar = 0.0;
       double totalMoraPaidSoFar = 0.0;
+
+      // Saldos restantes que se van reduciendo con cada abono
+      double remainingCapital = inst.principalPortion;
+      double remainingInterest = inst.interestPortion;
+      double remainingMora = inst.accumulatedMora;
 
       for (final p in instPayments) {
         final breakdown = p.installmentBreakdowns['${inst.installmentNumber}'];
@@ -274,6 +290,17 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
         final double mora = breakdown['mora'] ?? 0.0;
         final double cobrado = capital + interes + mora;
         
+        // El esperado para ESTE abono es lo que quedaba pendiente ANTES de pagar
+        final double expTotalForThisPayment = remainingCapital + remainingInterest + remainingMora;
+        final double expCapitalForThisPayment = remainingCapital;
+        final double expInterestForThisPayment = remainingInterest;
+        final double expMoraForThisPayment = remainingMora;
+
+        // Reducir los saldos restantes
+        remainingCapital = (remainingCapital - capital).clamp(0.0, double.infinity);
+        remainingInterest = (remainingInterest - interes).clamp(0.0, double.infinity);
+        remainingMora = (remainingMora - mora).clamp(0.0, double.infinity);
+
         totalCapitalPaidSoFar += capital;
         totalInterestPaidSoFar += interes;
         totalMoraPaidSoFar += mora;
@@ -295,6 +322,10 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
             capitalPaid: capital,
             interestPaid: interes,
             moraPaid: mora,
+            expectedTotal: expTotalForThisPayment,
+            expectedCapital: expCapitalForThisPayment,
+            expectedInterest: expInterestForThisPayment,
+            expectedMora: expMoraForThisPayment,
             statusLabel: estado,
             statusColor: col,
           ));
@@ -305,14 +336,19 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
         final double remainingCapital = inst.scheduledAmount > 0 ? inst.remainingAmount * (inst.principalPortion / inst.scheduledAmount) : inst.remainingAmount;
         final double remainingInterest = inst.scheduledAmount > 0 ? inst.remainingAmount * (inst.interestPortion / inst.scheduledAmount) : 0.0;
         
+        final double pendingMora = inst.accumulatedMora - totalMoraPaidSoFar;
         reportEntries.add(ReportEntry(
           joinedInstallment: j,
           payment: null,
           date: inst.dueDate,
           cobrado: 0.0,
-          capitalPaid: remainingCapital,
-          interestPaid: remainingInterest,
-          moraPaid: inst.accumulatedMora - totalMoraPaidSoFar,
+          capitalPaid: 0.0,
+          interestPaid: 0.0,
+          moraPaid: 0.0,
+          expectedTotal: remainingCapital + remainingInterest + pendingMora,
+          expectedCapital: remainingCapital,
+          expectedInterest: remainingInterest,
+          expectedMora: pendingMora,
           statusLabel: 'PENDIENTE',
           statusColor: Colors.red,
         ));
@@ -457,69 +493,7 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
                     
                   const SizedBox(height: 24),
                   
-                  Container(
-                    decoration: BoxDecoration(
-                      color: isDark ? const Color(0xFF14141E) : Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
-                      ],
-                    ),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                        sortColumnIndex: _sortColumnIndex,
-                        sortAscending: _sortAscending,
-                        headingTextStyle: const TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
-                        headingRowColor: WidgetStateProperty.all(AppTheme.primaryColor),
-                        columns: [
-                          DataColumn(label: const Text('FECHA AGENDADA'), onSort: _onSort),
-                          DataColumn(label: const Text('FECHA PAGO'), onSort: _onSort),
-                          DataColumn(label: const Text('ID CREDITO'), onSort: _onSort),
-                          DataColumn(label: const Text('CLIENTE'), onSort: _onSort),
-                          DataColumn(label: const Text('VALOR PAGADO', textAlign: TextAlign.right), onSort: _onSort),
-                          DataColumn(label: const Text('SALDO', textAlign: TextAlign.right), onSort: _onSort),
-                          DataColumn(label: const Text('INTERES', textAlign: TextAlign.right), onSort: _onSort),
-                          DataColumn(label: const Text('MORA', textAlign: TextAlign.right), onSort: _onSort),
-                          DataColumn(label: const Text('N. CUOTA'), onSort: _onSort),
-                          DataColumn(label: const Text('ESTADO'), onSort: _onSort),
-                        ],
-                        rows: filtered.map((entry) {
-                          final inst = entry.joinedInstallment.installment;
-                          final j = entry.joinedInstallment;
-                          
-                          return DataRow(cells: [
-                            DataCell(Text(DateFormat('dd/MM/yyyy').format(inst.dueDate))),
-                            DataCell(Text(entry.statusLabel != 'PENDIENTE' ? DateFormat('dd/MM/yyyy').format(entry.date) : '-')),
-                            DataCell(Text(j.credit.creditId.substring(0, 8))),
-                            DataCell(Text(j.client.fullName)),
-                            DataCell(Text(copFormatter.format(entry.cobrado))),
-                            DataCell(Text(copFormatter.format(entry.capitalPaid))),
-                            DataCell(Text(copFormatter.format(entry.interestPaid))),
-                            DataCell(Text(copFormatter.format(entry.moraPaid))),
-                            DataCell(Text('${inst.installmentNumber}')),
-                            DataCell(
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: entry.statusColor.withOpacity(0.15),
-                                  borderRadius: BorderRadius.circular(4),
-                                ),
-                                child: Text(
-                                  entry.statusLabel,
-                                  style: TextStyle(
-                                    color: entry.statusColor,
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ]);
-                        }).toList(),
-                      ),
-                    ),
-                  ),
+                  _buildStickyTable(filtered, isDark),
                 ],
               ),
             ),
@@ -535,6 +509,145 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
       selectedIndex: selectedIndex,
       title: 'Módulo de Informes',
       child: content,
+    );
+  }
+  /// Construye una celda con doble valor: esperado (verde claro) y pagado (azul o rojo).
+  Widget _buildDualValueCell(double expected, double actual) {
+    final isEqual = (actual - expected).abs() < 1.0; // tolerancia de $1
+    final actualColor = isEqual ? Colors.blue : Colors.red;
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Text(
+          copFormatter.format(expected),
+          style: const TextStyle(color: Color(0xFF66BB6A), fontSize: 11),
+          textAlign: TextAlign.center,
+        ),
+        Text(
+          copFormatter.format(actual),
+          style: TextStyle(color: actualColor, fontWeight: FontWeight.bold, fontSize: 13),
+          textAlign: TextAlign.center,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildStickyTable(List<ReportEntry> filtered, bool isDark) {
+    const headerStyle = TextStyle(fontWeight: FontWeight.bold, color: Colors.white, fontSize: 12);
+    final columnHeaders = [
+      'FECHA AGENDADA', 'FECHA PAGO', 'ID CREDITO', 'CLIENTE',
+      'VALOR PAGADO', 'SALDO', 'INTERES', 'MORA', 'N. CUOTA', 'ESTADO',
+    ];
+
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF14141E) : Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
+        ],
+      ),
+      clipBehavior: Clip.hardEdge,
+      constraints: const BoxConstraints(maxHeight: 600),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: 1400,
+          child: Column(
+            children: [
+              // --- HEADER FIJO ---
+              Container(
+                color: AppTheme.primaryColor,
+                padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+                child: Row(
+                  children: List.generate(columnHeaders.length, (i) {
+                    final flex = (i == 3) ? 2 : 1; // CLIENTE m\u00e1s ancho
+                    return Expanded(
+                      flex: flex,
+                      child: GestureDetector(
+                        onTap: () => _onSort(i, i == _sortColumnIndex ? !_sortAscending : true),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Flexible(child: Text(columnHeaders[i], style: headerStyle, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center)),
+                            if (_sortColumnIndex == i)
+                              Icon(
+                                _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
+                                size: 14, color: Colors.white70,
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ),
+              ),
+              // --- FILAS SCROLLABLES ---
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: filtered.asMap().entries.map((mapEntry) {
+                      final idx = mapEntry.key;
+                      final entry = mapEntry.value;
+                      final inst = entry.joinedInstallment.installment;
+                      final j = entry.joinedInstallment;
+                      final rowColor = idx.isEven
+                          ? (isDark ? const Color(0xFF1A1A2E) : const Color(0xFFF8F9FA))
+                          : (isDark ? const Color(0xFF14141E) : Colors.white);
+                      
+                      final cells = <Widget>[
+                        // 0: FECHA AGENDADA
+                        Text(DateFormat('dd/MM/yyyy').format(inst.dueDate), style: const TextStyle(fontSize: 12), textAlign: TextAlign.center),
+                        // 1: FECHA PAGO
+                        Text(entry.statusLabel != 'PENDIENTE' ? DateFormat('dd/MM/yyyy').format(entry.date) : '-', style: const TextStyle(fontSize: 12), textAlign: TextAlign.center),
+                        // 2: ID CREDITO
+                        Text(j.credit.creditId.length >= 8 ? j.credit.creditId.substring(0, 8) : j.credit.creditId, style: const TextStyle(fontSize: 12), textAlign: TextAlign.center),
+                        // 3: CLIENTE
+                        Text(j.client.fullName, style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis, textAlign: TextAlign.center),
+                        // 4: VALOR PAGADO (dual)
+                        _buildDualValueCell(entry.expectedTotal, entry.cobrado),
+                        // 5: SALDO / Capital (dual)
+                        _buildDualValueCell(entry.expectedCapital, entry.capitalPaid),
+                        // 6: INTERES (dual)
+                        _buildDualValueCell(entry.expectedInterest, entry.interestPaid),
+                        // 7: MORA (dual)
+                        _buildDualValueCell(entry.expectedMora, entry.moraPaid),
+                        // 8: N. CUOTA
+                        Text('${inst.installmentNumber}', style: const TextStyle(fontSize: 12), textAlign: TextAlign.center),
+                        // 9: ESTADO
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: entry.statusColor.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            entry.statusLabel,
+                            style: TextStyle(color: entry.statusColor, fontWeight: FontWeight.bold, fontSize: 11),
+                          ),
+                        ),
+                      ];
+
+                      return Container(
+                        color: rowColor,
+                        padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
+                        child: Row(
+                          children: List.generate(cells.length, (i) {
+                            final flex = (i == 3) ? 2 : 1;
+                            return Expanded(flex: flex, child: Center(child: cells[i]));
+                          }),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
