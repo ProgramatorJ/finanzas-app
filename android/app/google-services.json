@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "676462173050",
+    "project_id": "mi-gestor-prestamos",
+    "storage_bucket": "mi-gestor-prestamos.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:676462173050:android:6a859ab2353e0771ab54c3",
+        "android_client_info": {
+          "package_name": "com.tuempresa.finanzas_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD7_Fspp6tSBTOgiRJ-kJzwT0JPk84KN9k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

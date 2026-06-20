@@ -1,0 +1,70 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Funciones Helper ─────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    function userRole() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
+    }
+    function isAdmin() {
+      return isAuthenticated() && userRole() == 'admin';
+    }
+    function isCobrador() {
+      return isAuthenticated() && userRole() == 'cobrador';
+    }
+    function isAssignedCollector(clientData) {
+      return request.auth.uid in clientData.assignedCollectorIds;
+    }
+
+    // ── /users ────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (isAdmin() || request.auth.uid == userId);
+      allow write: if isAdmin();
+    }
+
+    // ── /clients ──────────────────────────────────────────────────────
+    match /clients/{clientId} {
+      allow read: if isAdmin() ||
+                    (isCobrador() && isAssignedCollector(resource.data));
+      allow create, update, delete: if isAdmin();
+    }
+
+    // ── /credits/{creditId} ───────────────────────────────────────────
+    match /credits/{creditId} {
+      allow read: if isAdmin() ||
+                    (isCobrador() && isAssignedCollector(
+                      get(/databases/$(database)/documents/clients/$(resource.data.clientId)).data
+                    ));
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() ||
+                    (isCobrador() && isAssignedCollector(
+                      get(/databases/$(database)/documents/clients/$(resource.data.clientId)).data
+                    ));
+
+      // Cuotas
+      match /installments/{installmentId} {
+        allow read: if isAdmin() || isCobrador();
+        allow create, delete: if isAdmin();
+        allow update: if isAdmin() || 
+                      (isCobrador() && request.auth.uid in get(/databases/$(database)/documents/clients/$(get(/databases/$(database)/documents/credits/$(creditId)).data.clientId)).data.assignedCollectorIds);
+      }
+
+      // Pagos — cobrador puede crear (registrar pago), no editar ni borrar
+      match /payments/{paymentId} {
+        allow read: if isAdmin() || isCobrador();
+        allow create: if isAdmin() || 
+                      (isCobrador() && request.auth.uid in get(/databases/$(database)/documents/clients/$(get(/databases/$(database)/documents/credits/$(creditId)).data.clientId)).data.assignedCollectorIds);
+        allow update, delete: if isAdmin();
+      }
+    }
+
+    // ── /appConfig ────────────────────────────────────────────────────
+    match /appConfig/{configId} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+  }
+}
