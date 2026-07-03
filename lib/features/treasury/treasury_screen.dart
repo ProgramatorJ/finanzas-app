@@ -14,6 +14,7 @@ import '../../shared/theme/responsive_sidebar_scaffold.dart';
 import '../../core/models/user_model.dart';
 import '../../core/services/rbac_service.dart';
 
+import 'dart:async';
 import '../calendar/calendar_providers.dart'; // Para allPaymentsProvider y allCreditsStreamProvider
 import '../credits/credit_list_screen.dart'; // Para allCreditsStreamProvider
 
@@ -30,7 +31,48 @@ final investmentsStreamProvider = StreamProvider<List<InvestmentModel>>((ref) {
 });
 
 final allInvestorPaymentsStreamProvider = StreamProvider<List<InvestorPaymentModel>>((ref) {
-  return ref.watch(firestoreServiceProvider).getAllInvestorPaymentsStream();
+  final investmentsAsync = ref.watch(investmentsStreamProvider);
+  return investmentsAsync.maybeWhen(
+    data: (investments) {
+      if (investments.isEmpty) {
+        return Stream.value(<InvestorPaymentModel>[]);
+      }
+
+      final controller = StreamController<List<InvestorPaymentModel>>();
+      final Map<String, List<InvestorPaymentModel>> paymentsByInvestment = {};
+      final List<StreamSubscription> subscriptions = [];
+
+      void emitMerged() {
+        final allPayments = paymentsByInvestment.values.expand((x) => x).toList();
+        allPayments.sort((a, b) => b.paymentDate.compareTo(a.paymentDate));
+        if (!controller.isClosed) {
+          controller.add(allPayments);
+        }
+      }
+
+      for (var inv in investments) {
+        final sub = ref.read(firestoreServiceProvider)
+            .getInvestorPaymentsStream(inv.investmentId)
+            .listen((payments) {
+          paymentsByInvestment[inv.investmentId] = payments;
+          emitMerged();
+        }, onError: (e) {
+          debugPrint('Error loading payments for ${inv.investmentId}: $e');
+        });
+        subscriptions.add(sub);
+      }
+
+      ref.onDispose(() {
+        for (var sub in subscriptions) {
+          sub.cancel();
+        }
+        controller.close();
+      });
+
+      return controller.stream;
+    },
+    orElse: () => Stream.value(<InvestorPaymentModel>[]),
+  );
 });
 
 class TreasuryScreen extends ConsumerStatefulWidget {
