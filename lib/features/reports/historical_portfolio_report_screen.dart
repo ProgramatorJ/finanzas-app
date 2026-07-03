@@ -3,11 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
 
-import '../../shared/theme/app_theme.dart';
 import '../../core/models/credit_model.dart';
 import '../../core/models/installment_model.dart';
-import '../../core/services/firestore_service.dart';
 import '../calendar/calendar_providers.dart'; // Para joinedInstallmentsProvider
+import '../credits/credit_list_screen.dart'; // Para allCreditsStreamProvider, creditsClientsStreamProvider
 
 enum HistoricalPeriod {
   daily,
@@ -19,15 +18,9 @@ enum HistoricalPeriod {
 }
 
 class _HistoricalPeriodData {
-  double nuevosDesembolsos = 0;
-  double capitalRecaudado = 0;
-  double carteraActiva = 0;
-  double ingresosUtilidad = 0;
-}
-
-enum HistoricalMetric {
-  carteraActiva,
-  utilidadNeta,
+  double capitalSaldo = 0;
+  double interesMoraSaldo = 0;
+  double totalSaldo = 0;
 }
 
 class HistoricalPortfolioReportScreen extends ConsumerStatefulWidget {
@@ -43,7 +36,6 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
 
   HistoricalPeriod _selectedPeriod = HistoricalPeriod.monthly;
   int _chartPeriodsToDisplay = 6;
-  HistoricalMetric _selectedMetric = HistoricalMetric.carteraActiva;
 
   int _sortColumnIndex = 0;
   bool _sortAscending = true;
@@ -130,20 +122,56 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
 
   @override
   Widget build(BuildContext context) {
-    final creditsAsync = ref.watch(firestoreServiceProvider).getAllCreditsStream();
-    final joinedAsync = ref.watch(joinedInstallmentsProvider);
+    final creditsAsync = ref.watch(allCreditsStreamProvider);
+    final clientsAsync = ref.watch(creditsClientsStreamProvider);
+    final allInstallmentsAsync = ref.watch(allInstallmentsStreamProvider);
 
-    return StreamBuilder<List<CreditModel>>(
-      stream: creditsAsync,
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting || joinedAsync.isLoading) {
-          return const Center(child: CircularProgressIndicator());
-        }
+    if (creditsAsync.isLoading || clientsAsync.isLoading || allInstallmentsAsync.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
 
-        final credits = snapshot.data ?? [];
-        final allJoined = joinedAsync.value ?? [];
+    final credits = creditsAsync.value ?? [];
+    final clients = clientsAsync.value ?? [];
+    final installments = allInstallmentsAsync.value ?? [];
 
-    // Generar periodos a mostrar
+    final clientMap = {for (final cl in clients) cl.clientId: cl};
+    
+    // Solo créditos con saldo (activos o con saldo pendiente) para la tabla.
+    final activeCredits = credits.where((c) => c.status == CreditStatus.active || c.status == CreditStatus.restructured || c.outstandingBalance > 0).toList();
+
+    // Ordenar activos para la tabla
+    activeCredits.sort((a, b) {
+      int cmp = 0;
+      switch (_sortColumnIndex) {
+        case 0: cmp = a.creditId.compareTo(b.creditId); break;
+        case 1: cmp = a.disbursementDate.compareTo(b.disbursementDate); break;
+        case 2: 
+          final cA = clientMap[a.clientId]?.fullName ?? '';
+          final cB = clientMap[b.clientId]?.fullName ?? '';
+          cmp = cA.compareTo(cB); 
+          break;
+        case 3: cmp = a.clientId.compareTo(b.clientId); break;
+        case 4: cmp = a.principalAmount.compareTo(b.principalAmount); break;
+        case 5: cmp = a.termInMonths.compareTo(b.termInMonths); break;
+        case 6: cmp = (a.totalAmount + a.accumulatedMora).compareTo(b.totalAmount + b.accumulatedMora); break;
+        case 7: cmp = a.paymentFrequency.name.compareTo(b.paymentFrequency.name); break;
+        case 8: cmp = a.numberOfInstallments.compareTo(b.numberOfInstallments); break;
+        case 9: cmp = a.installmentAmount.compareTo(b.installmentAmount); break;
+        case 10: cmp = a.totalPaid.compareTo(b.totalPaid); break;
+        case 11: cmp = (a.principalAmount - a.totalPaidPrincipal).compareTo(b.principalAmount - b.totalPaidPrincipal); break;
+        case 12: cmp = (a.totalInterest - a.totalPaidInterest).compareTo(b.totalInterest - b.totalPaidInterest); break;
+        case 13: cmp = (a.accumulatedMora - a.totalPaidMora).compareTo(b.accumulatedMora - b.totalPaidMora); break;
+        case 14: 
+          final saldoA = (a.principalAmount - a.totalPaidPrincipal) + (a.totalInterest - a.totalPaidInterest) + (a.accumulatedMora - a.totalPaidMora);
+          final saldoB = (b.principalAmount - b.totalPaidPrincipal) + (b.totalInterest - b.totalPaidInterest) + (b.accumulatedMora - b.totalPaidMora);
+          cmp = saldoA.compareTo(saldoB); 
+          break;
+        case 15: cmp = a.status.name.compareTo(b.status.name); break;
+      }
+      return _sortAscending ? cmp : -cmp;
+    });
+
+    // Generar periodos a mostrar para la gráfica
     final now = DateTime.now();
     DateTime latestPeriodStart = _getPeriodStart(now, _selectedPeriod);
     
@@ -155,93 +183,91 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
     }
     contiguousPeriods = contiguousPeriods.reversed.toList();
 
-    // Calcular datos históricos
+    // Map the installments to credits for faster access
+    final installmentsByCredit = <String, List<InstallmentModel>>{};
+    for (var inst in installments) {
+      if (inst.creditId != null) {
+        installmentsByCredit.putIfAbsent(inst.creditId!, () => []).add(inst);
+      }
+    }
+
     final Map<DateTime, _HistoricalPeriodData> dataByPeriod = {};
     for (var p in contiguousPeriods) {
       dataByPeriod[p] = _HistoricalPeriodData();
     }
 
-    // Calcular montos exactos evaluando crédito por crédito y cuota por cuota
-    // para los periodos que vamos a mostrar.
     for (var p in contiguousPeriods) {
-      final pStart = p;
       final pEnd = _getPeriodEnd(p, _selectedPeriod);
       final md = dataByPeriod[p]!;
 
-      // 1. Cartera Activa al cierre del periodo (Foto en pEnd)
-      double totalDesembolsadoHistorico = 0;
+      double totalCapitalDesembolsado = 0;
+      double totalCapitalPagado = 0;
+      
+      double totalInteresEsperado = 0;
+      double totalInteresPagado = 0;
+      
+      double totalMoraGenerada = 0;
+      double totalMoraPagada = 0;
+
       for (var c in credits) {
         if (c.disbursementDate.isBefore(pEnd) || c.disbursementDate.isAtSameMomentAs(pEnd)) {
-          totalDesembolsadoHistorico += c.principalAmount;
-          // Si el crédito se desembolsó DENTRO de este periodo, sumarlo a "Nuevos Desembolsos"
-          if (!c.disbursementDate.isBefore(pStart)) {
-            md.nuevosDesembolsos += c.principalAmount;
+          totalCapitalDesembolsado += c.principalAmount;
+          totalInteresEsperado += c.totalInterest;
+          
+          final insts = installmentsByCredit[c.creditId] ?? [];
+          for (var inst in insts) {
+            if (inst.paidAmount > 0 && (inst.updatedAt.isBefore(pEnd) || inst.updatedAt.isAtSameMomentAs(pEnd))) {
+               double capitalPagado = inst.status == InstallmentStatus.paid ? inst.principalPortion : 0;
+               if (inst.status != InstallmentStatus.paid && inst.paidAmount > inst.accumulatedMora + inst.interestPortion) {
+                 capitalPagado = inst.paidAmount - inst.accumulatedMora - inst.interestPortion;
+               }
+               totalCapitalPagado += capitalPagado;
+
+               double interesPagado = inst.status == InstallmentStatus.paid ? inst.interestPortion : 0;
+               if (inst.status != InstallmentStatus.paid && inst.paidAmount > 0) {
+                 double moraCobrada = inst.paidAmount > inst.accumulatedMora ? inst.accumulatedMora : inst.paidAmount;
+                 double resto = inst.paidAmount - moraCobrada;
+                 interesPagado = resto > inst.interestPortion ? inst.interestPortion : resto;
+               }
+               totalInteresPagado += interesPagado;
+               
+               totalMoraPagada += inst.moraPaid;
+            }
+
+            final moraStart = inst.moraStartDate ?? inst.dueDate;
+            if (moraStart.isBefore(pEnd) && inst.isMoraActive && !inst.isMoraExempt) {
+               DateTime endCalculationDate = pEnd;
+               if (inst.status == InstallmentStatus.paid && inst.updatedAt.isBefore(pEnd)) {
+                 endCalculationDate = inst.updatedAt;
+               }
+               
+               int daysLate = endCalculationDate.difference(moraStart).inDays;
+               if (daysLate > 0) {
+                 double moraHistorica = inst.moraBase * inst.dailyMoraRate * daysLate;
+                 if (moraHistorica > inst.accumulatedMora && endCalculationDate == pEnd && inst.status != InstallmentStatus.paid) {
+                   moraHistorica = inst.accumulatedMora;
+                 } else if (inst.status == InstallmentStatus.paid) {
+                   moraHistorica = inst.accumulatedMora;
+                 }
+                 totalMoraGenerada += moraHistorica;
+               }
+            }
           }
         }
       }
 
-      double totalCapitalRecaudadoHistorico = 0;
-      for (var j in allJoined) {
-        final inst = j.installment;
-        if (inst.status == InstallmentStatus.paid || inst.paidAmount > 0) {
-          // Consideramos el pago si la fecha de actualización es anterior o igual al fin del periodo
-          if (inst.updatedAt.isBefore(pEnd) || inst.updatedAt.isAtSameMomentAs(pEnd)) {
-            // Asumimos que si está pagado, se recuperó principalPortion. 
-            // Si es parcial, podríamos prorratear, pero como no hay control exacto, sumamos lo que alcance a cubrir el capital.
-            double capitalPagado = inst.status == InstallmentStatus.paid ? inst.principalPortion : 0;
-            if (inst.status != InstallmentStatus.paid && inst.paidAmount > inst.accumulatedMora + inst.interestPortion) {
-              capitalPagado = inst.paidAmount - inst.accumulatedMora - inst.interestPortion;
-            }
-            totalCapitalRecaudadoHistorico += capitalPagado;
-
-            // Si el pago se hizo DENTRO de este periodo, sumarlo a "Capital Recaudado" y "Utilidad"
-            if (!inst.updatedAt.isBefore(pStart)) {
-              md.capitalRecaudado += capitalPagado;
-              
-              double utilidadPagada = 0;
-              if (inst.status == InstallmentStatus.paid) {
-                utilidadPagada = inst.interestPortion + inst.moraPaid;
-              } else if (inst.paidAmount > 0) {
-                // Pago parcial de utilidad
-                double moraCobrada = inst.paidAmount > inst.accumulatedMora ? inst.accumulatedMora : inst.paidAmount;
-                double resto = inst.paidAmount - moraCobrada;
-                double intCobrado = resto > inst.interestPortion ? inst.interestPortion : resto;
-                utilidadPagada = moraCobrada + intCobrado;
-              }
-              md.ingresosUtilidad += utilidadPagada;
-            }
-          }
-        }
-      }
-
-      md.carteraActiva = totalDesembolsadoHistorico - totalCapitalRecaudadoHistorico;
-      if (md.carteraActiva < 0) md.carteraActiva = 0;
+      md.capitalSaldo = totalCapitalDesembolsado - totalCapitalPagado;
+      if (md.capitalSaldo < 0) md.capitalSaldo = 0;
+      
+      md.interesMoraSaldo = (totalInteresEsperado - totalInteresPagado) + (totalMoraGenerada - totalMoraPagada);
+      if (md.interesMoraSaldo < 0) md.interesMoraSaldo = 0;
+      
+      md.totalSaldo = md.capitalSaldo + md.interesMoraSaldo;
     }
 
-    // Preparar para la tabla
-    final tablePeriods = contiguousPeriods.toList();
-    tablePeriods.sort((a, b) {
-      int cmp = 0;
-      if (_sortColumnIndex == 0) {
-        cmp = a.compareTo(b);
-      } else {
-        final da = dataByPeriod[a]!;
-        final db = dataByPeriod[b]!;
-        switch (_sortColumnIndex) {
-          case 1: cmp = da.nuevosDesembolsos.compareTo(db.nuevosDesembolsos); break;
-          case 2: cmp = da.capitalRecaudado.compareTo(db.capitalRecaudado); break;
-          case 3: cmp = da.carteraActiva.compareTo(db.carteraActiva); break;
-          case 4: cmp = da.ingresosUtilidad.compareTo(db.ingresosUtilidad); break;
-        }
-      }
-      return _sortAscending ? cmp : -cmp;
-    });
-
-    // Preparar para la gráfica
     double maxY = 0;
     for (var p in contiguousPeriods) {
-      final md = dataByPeriod[p]!;
-      double val = _selectedMetric == HistoricalMetric.carteraActiva ? md.carteraActiva : md.ingresosUtilidad;
+      final val = dataByPeriod[p]!.totalSaldo;
       if (val > maxY) maxY = val;
     }
     if (maxY == 0) maxY = 100;
@@ -305,26 +331,16 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                     const Text(' periodos'),
                   ],
                 ),
-                DropdownButton<HistoricalMetric>(
-                  value: _selectedMetric,
-                  onChanged: (v) {
-                    if (v != null) setState(() => _selectedMetric = v);
-                  },
-                  items: const [
-                    DropdownMenuItem(value: HistoricalMetric.carteraActiva, child: Text('Ver Cartera Activa')),
-                    DropdownMenuItem(value: HistoricalMetric.utilidadNeta, child: Text('Ver Ganancia (Interés+Mora)')),
-                  ],
-                ),
               ],
             ),
           ),
           const SizedBox(height: 24),
 
           // --- Gráfica ---
-          Text(_selectedMetric == HistoricalMetric.carteraActiva ? 'Evolución de Cartera Activa' : 'Ganancia por Periodo', style: Theme.of(context).textTheme.titleLarge),
+          Text('Capital Total (Evolución de Saldos)', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 16),
           Container(
-            height: 300,
+            height: 350,
             padding: const EdgeInsets.only(top: 24, right: 24, left: 16, bottom: 16),
             decoration: BoxDecoration(
               color: isDark ? const Color(0xFF1E1E2C) : Colors.white,
@@ -333,179 +349,131 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                 BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
               ],
             ),
-            child: _selectedMetric == HistoricalMetric.carteraActiva
-              ? LineChart(
-                  LineChartData(
-                    gridData: FlGridData(
-                      show: true,
-                      drawVerticalLine: false,
-                      getDrawingHorizontalLine: (value) => FlLine(
-                        color: isDark ? Colors.white10 : Colors.black12,
-                        strokeWidth: 1,
-                        dashArray: [5, 5],
-                      ),
-                    ),
-                    titlesData: FlTitlesData(
-                      show: true,
-                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 32,
-                          interval: 1,
-                          getTitlesWidget: (value, meta) {
-                            if (value.toInt() < 0 || value.toInt() >= contiguousPeriods.length) return const SizedBox();
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 8.0),
-                              child: Text(
-                                _formatPeriodLabel(contiguousPeriods[value.toInt()], _selectedPeriod),
-                                style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : Colors.black87),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 60,
-                          getTitlesWidget: (value, meta) {
-                            if (value == 0) return const SizedBox();
-                            return Text(
-                              '\$${(value / 1000).toStringAsFixed(0)}k',
-                              style: TextStyle(fontSize: 10, color: isDark ? Colors.white54 : Colors.black54),
-                            );
-                          },
-                        ),
-                      ),
-                    ),
-                    borderData: FlBorderData(show: false),
-                    minX: 0,
-                    maxX: (contiguousPeriods.length - 1).toDouble(),
-                    minY: 0,
-                    maxY: maxY * 1.2,
-                    lineBarsData: [
-                      LineChartBarData(
-                        spots: List.generate(contiguousPeriods.length, (i) {
-                          return FlSpot(i.toDouble(), dataByPeriod[contiguousPeriods[i]]!.carteraActiva);
-                        }),
-                        isCurved: true,
-                        color: AppTheme.primaryColor,
-                        barWidth: 4,
-                        isStrokeCapRound: true,
-                        dotData: const FlDotData(show: true),
-                        belowBarData: BarAreaData(
-                          show: true,
-                          color: AppTheme.primaryColor.withOpacity(0.2),
-                        ),
-                      ),
-                    ],
-                    lineTouchData: LineTouchData(
-                      touchTooltipData: LineTouchTooltipData(
-                        getTooltipColor: (spot) => isDark ? Colors.blueGrey.shade900 : Colors.white,
-                        getTooltipItems: (touchedSpots) {
-                          return touchedSpots.map((spot) {
-                            final date = contiguousPeriods[spot.x.toInt()];
-                            final val = dataByPeriod[date]!.carteraActiva;
-                            return LineTooltipItem(
-                              '${_formatPeriodLabel(date, _selectedPeriod)}\n${copFormatter.format(val)}',
-                              TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold),
-                            );
-                          }).toList();
-                        },
-                      ),
-                    ),
-                  ),
-                )
-              : BarChart(
-                  BarChartData(
-                    alignment: BarChartAlignment.spaceAround,
-                    maxY: maxY * 1.2,
-                    barTouchData: BarTouchData(
-                      enabled: true,
-                      touchTooltipData: BarTouchTooltipData(
-                        getTooltipColor: (group) => isDark ? Colors.blueGrey.shade900 : Colors.white,
-                        getTooltipItem: (group, groupIndex, rod, rodIndex) {
-                          final date = contiguousPeriods[group.x];
-                          final val = dataByPeriod[date]!.ingresosUtilidad;
-                          return BarTooltipItem(
-                            '${_formatPeriodLabel(date, _selectedPeriod)}\n${copFormatter.format(val)}',
-                            TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold),
-                          );
-                        },
-                      ),
-                    ),
-                    titlesData: FlTitlesData(
-                      show: true,
-                      bottomTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          getTitlesWidget: (value, meta) {
-                            if (value.toInt() < 0 || value.toInt() >= contiguousPeriods.length) return const SizedBox();
-                            return Padding(
-                              padding: const EdgeInsets.only(top: 8),
-                              child: Text(
-                                _formatPeriodLabel(contiguousPeriods[value.toInt()], _selectedPeriod),
-                                style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : Colors.black87),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      leftTitles: AxisTitles(
-                        sideTitles: SideTitles(
-                          showTitles: true,
-                          reservedSize: 60,
-                          getTitlesWidget: (value, meta) {
-                            if (value == 0) return const SizedBox();
-                            return Text(
-                              '\$${(value / 1000).toStringAsFixed(0)}k',
-                              style: TextStyle(fontSize: 10, color: isDark ? Colors.white54 : Colors.black54),
-                            );
-                          },
-                        ),
-                      ),
-                      topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                      rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
-                    ),
-                    gridData: FlGridData(
-                      show: true,
-                      drawVerticalLine: false,
-                      getDrawingHorizontalLine: (value) => FlLine(
-                        color: isDark ? Colors.white10 : Colors.black12,
-                        strokeWidth: 1,
-                        dashArray: [5, 5],
-                      ),
-                    ),
-                    borderData: FlBorderData(show: false),
-                    barGroups: List.generate(contiguousPeriods.length, (i) {
-                      final md = dataByPeriod[contiguousPeriods[i]]!;
-                      return BarChartGroupData(
-                        x: i,
-                        barRods: [
-                          BarChartRodData(
-                            toY: md.ingresosUtilidad,
-                            color: Colors.amber.shade600,
-                            width: 20,
-                            borderRadius: BorderRadius.circular(4),
-                            backDrawRodData: BackgroundBarChartRodData(
-                              show: true,
-                              toY: maxY * 1.2,
-                              color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),
-                            ),
-                          ),
-                        ],
-                      );
-                    }),
+            child: LineChart(
+              LineChartData(
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  getDrawingHorizontalLine: (value) => FlLine(
+                    color: isDark ? Colors.white10 : Colors.black12,
+                    strokeWidth: 1,
+                    dashArray: [5, 5],
                   ),
                 ),
+                titlesData: FlTitlesData(
+                  show: true,
+                  rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 32,
+                      interval: 1,
+                      getTitlesWidget: (value, meta) {
+                        if (value.toInt() < 0 || value.toInt() >= contiguousPeriods.length) return const SizedBox();
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 8.0),
+                          child: Text(
+                            _formatPeriodLabel(contiguousPeriods[value.toInt()], _selectedPeriod),
+                            style: TextStyle(fontSize: 10, color: isDark ? Colors.white70 : Colors.black87),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      reservedSize: 60,
+                      getTitlesWidget: (value, meta) {
+                        if (value == 0) return const SizedBox();
+                        return Text(
+                          '\$${(value / 1000).toStringAsFixed(0)}k',
+                          style: TextStyle(fontSize: 10, color: isDark ? Colors.white54 : Colors.black54),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                borderData: FlBorderData(show: false),
+                minX: 0,
+                maxX: (contiguousPeriods.length - 1).toDouble(),
+                minY: 0,
+                maxY: maxY * 1.2,
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: List.generate(contiguousPeriods.length, (i) {
+                      return FlSpot(i.toDouble(), dataByPeriod[contiguousPeriods[i]]!.capitalSaldo);
+                    }),
+                    isCurved: true,
+                    color: Colors.blueAccent,
+                    barWidth: 3,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(show: true),
+                  ),
+                  LineChartBarData(
+                    spots: List.generate(contiguousPeriods.length, (i) {
+                      return FlSpot(i.toDouble(), dataByPeriod[contiguousPeriods[i]]!.interesMoraSaldo);
+                    }),
+                    isCurved: true,
+                    color: Colors.amber,
+                    barWidth: 3,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(show: true),
+                  ),
+                  LineChartBarData(
+                    spots: List.generate(contiguousPeriods.length, (i) {
+                      return FlSpot(i.toDouble(), dataByPeriod[contiguousPeriods[i]]!.totalSaldo);
+                    }),
+                    isCurved: true,
+                    color: Colors.purpleAccent,
+                    barWidth: 4,
+                    isStrokeCapRound: true,
+                    dotData: const FlDotData(show: true),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: Colors.purpleAccent.withOpacity(0.1),
+                    ),
+                  ),
+                ],
+                lineTouchData: LineTouchData(
+                  touchTooltipData: LineTouchTooltipData(
+                    getTooltipColor: (spot) => isDark ? Colors.blueGrey.shade900 : Colors.white,
+                    getTooltipItems: (touchedSpots) {
+                      return touchedSpots.map((spot) {
+                        final date = contiguousPeriods[spot.x.toInt()];
+                        String label = '';
+                        if (spot.barIndex == 0) label = 'Capital: ';
+                        if (spot.barIndex == 1) label = 'Int+Mora: ';
+                        if (spot.barIndex == 2) label = 'Total: ';
+                        return LineTooltipItem(
+                          '$label${copFormatter.format(spot.y)}',
+                          TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold),
+                        );
+                      }).toList();
+                    },
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Leyenda
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              _buildLegendItem(Colors.blueAccent, 'Saldo Capital'),
+              const SizedBox(width: 16),
+              _buildLegendItem(Colors.amber, 'Saldo Interés+Mora'),
+              const SizedBox(width: 16),
+              _buildLegendItem(Colors.purpleAccent, 'Saldo Total'),
+            ],
           ),
 
           const SizedBox(height: 32),
 
           // --- Tabla de Datos ---
-          Text('Detalle por Periodo', style: Theme.of(context).textTheme.titleLarge),
+          Text('Detalle de Créditos Activos', style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 16),
           Container(
             width: double.infinity,
@@ -514,27 +482,57 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
               borderRadius: BorderRadius.circular(12),
               border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
             ),
-            child: SingleChildScrollView(
+            child: activeCredits.isEmpty 
+              ? const Padding(padding: EdgeInsets.all(32), child: Center(child: Text('No hay créditos activos')))
+              : SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
                 sortColumnIndex: _sortColumnIndex,
                 sortAscending: _sortAscending,
                 columns: [
+                  DataColumn(label: const Text('ID Crédito'), onSort: _onSort),
+                  DataColumn(label: const Text('Fecha Inicio'), onSort: _onSort),
+                  DataColumn(label: const Text('Cliente'), onSort: _onSort),
+                  DataColumn(label: const Text('ID Cliente'), onSort: _onSort),
+                  DataColumn(label: const Text('Valor Crédito'), numeric: true, onSort: _onSort),
+                  DataColumn(label: const Text('Plazo'), numeric: true, onSort: _onSort),
+                  DataColumn(label: const Text('Total (C+I+M)'), numeric: true, onSort: _onSort),
                   DataColumn(label: const Text('Periodo'), onSort: _onSort),
-                  DataColumn(label: const Text('Nuevos Desembolsos'), numeric: true, onSort: _onSort),
-                  DataColumn(label: const Text('Capital Recaudado'), numeric: true, onSort: _onSort),
-                  DataColumn(label: const Text('Cartera Activa'), numeric: true, onSort: _onSort),
-                  DataColumn(label: const Text('Ganancia (Int+Mora)'), numeric: true, onSort: _onSort),
+                  DataColumn(label: const Text('Cuotas'), numeric: true, onSort: _onSort),
+                  DataColumn(label: const Text('Valor Cuota'), numeric: true, onSort: _onSort),
+                  DataColumn(label: const Text('Pagado'), numeric: true, onSort: _onSort),
+                  DataColumn(label: const Text('Saldo Capital'), numeric: true, onSort: _onSort),
+                  DataColumn(label: const Text('Saldo Interés'), numeric: true, onSort: _onSort),
+                  DataColumn(label: const Text('Saldo Mora'), numeric: true, onSort: _onSort),
+                  DataColumn(label: const Text('Saldo Total'), numeric: true, onSort: _onSort),
+                  DataColumn(label: const Text('Estado'), onSort: _onSort),
                 ],
-                rows: tablePeriods.map((p) {
-                  final md = dataByPeriod[p]!;
+                rows: activeCredits.map((c) {
+                  final clientName = clientMap[c.clientId]?.fullName ?? 'Desconocido';
+                  final totalCIM = c.totalAmount + c.accumulatedMora;
+                  final saldoCap = c.principalAmount - c.totalPaidPrincipal;
+                  final saldoInt = c.totalInterest - c.totalPaidInterest;
+                  final saldoMora = c.accumulatedMora - c.totalPaidMora;
+                  final saldoTotal = saldoCap + saldoInt + saldoMora;
+
                   return DataRow(
                     cells: [
-                      DataCell(Text(_formatPeriodLabel(p, _selectedPeriod))),
-                      DataCell(Text(copFormatter.format(md.nuevosDesembolsos), style: const TextStyle(color: Colors.blueAccent))),
-                      DataCell(Text(copFormatter.format(md.capitalRecaudado), style: const TextStyle(color: Colors.green))),
-                      DataCell(Text(copFormatter.format(md.carteraActiva), style: const TextStyle(fontWeight: FontWeight.bold))),
-                      DataCell(Text(copFormatter.format(md.ingresosUtilidad), style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.amber))),
+                      DataCell(Text(c.creditId.length > 8 ? c.creditId.substring(0,8) : c.creditId)),
+                      DataCell(Text(DateFormat('dd/MM/yyyy').format(c.disbursementDate))),
+                      DataCell(Text(clientName)),
+                      DataCell(Text(c.clientId.length > 8 ? c.clientId.substring(0,8) : c.clientId)),
+                      DataCell(Text(copFormatter.format(c.principalAmount))),
+                      DataCell(Text('${c.termInMonths} m')),
+                      DataCell(Text(copFormatter.format(totalCIM))),
+                      DataCell(Text(c.paymentFrequency.name)),
+                      DataCell(Text('${c.numberOfInstallments}')),
+                      DataCell(Text(copFormatter.format(c.installmentAmount))),
+                      DataCell(Text(copFormatter.format(c.totalPaid), style: const TextStyle(color: Colors.green))),
+                      DataCell(Text(copFormatter.format(saldoCap))),
+                      DataCell(Text(copFormatter.format(saldoInt))),
+                      DataCell(Text(copFormatter.format(saldoMora))),
+                      DataCell(Text(copFormatter.format(saldoTotal), style: const TextStyle(fontWeight: FontWeight.bold))),
+                      DataCell(Text(c.status.name.toUpperCase())),
                     ],
                   );
                 }).toList(),
@@ -550,10 +548,18 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Evolución y Ganancias')),
+      appBar: AppBar(title: const Text('Capital Total')),
       body: content,
     );
-      }
+  }
+
+  Widget _buildLegendItem(Color color, String text) {
+    return Row(
+      children: [
+        Container(width: 12, height: 12, color: color),
+        const SizedBox(width: 4),
+        Text(text, style: const TextStyle(fontSize: 12)),
+      ],
     );
   }
 }

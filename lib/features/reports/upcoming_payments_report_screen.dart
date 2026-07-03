@@ -23,6 +23,12 @@ enum ReportPeriod {
   custom,
 }
 
+class SortCriterion {
+  final int columnIndex;
+  final bool ascending;
+  SortCriterion(this.columnIndex, this.ascending);
+}
+
 class _PeriodData {
   double expectedValue = 0;
   double paidValue = 0;
@@ -79,8 +85,7 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
   DateTime? _customStartDate;
   DateTime? _customEndDate;
 
-  int _sortColumnIndex = 0;
-  bool _sortAscending = true;
+  List<SortCriterion> _sortCriteria = [];
 
   int _chartPeriodsToDisplay = 6;
   final TextEditingController _maxYController = TextEditingController();
@@ -149,10 +154,19 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
     }
   }
 
-  void _onSort(int columnIndex, bool ascending) {
+  void _onSort(int columnIndex) {
     setState(() {
-      _sortColumnIndex = columnIndex;
-      _sortAscending = ascending;
+      final existingIndex = _sortCriteria.indexWhere((c) => c.columnIndex == columnIndex);
+      if (existingIndex == -1) {
+        _sortCriteria.add(SortCriterion(columnIndex, true));
+      } else {
+        final existing = _sortCriteria[existingIndex];
+        if (existing.ascending) {
+          _sortCriteria[existingIndex] = SortCriterion(columnIndex, false);
+        } else {
+          _sortCriteria.removeAt(existingIndex);
+        }
+      }
     });
   }
 
@@ -255,7 +269,7 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
       }
       return ResponsiveSidebarScaffold(
         selectedIndex: selectedIndex,
-        title: 'Informe de Pagos',
+        title: 'Pagos',
         child: const Center(child: CircularProgressIndicator()),
       );
     }
@@ -358,42 +372,45 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
     final filtered = reportEntries.where((entry) => _isDateInRange(entry.date)).toList();
 
     filtered.sort((a, b) {
-      int compare;
-      switch (_sortColumnIndex) {
-        case 0:
-          compare = a.joinedInstallment.installment.dueDate.compareTo(b.joinedInstallment.installment.dueDate);
-          break;
-        case 1:
-          compare = a.date.compareTo(b.date);
-          break;
-        case 2:
-          compare = a.joinedInstallment.credit.creditId.compareTo(b.joinedInstallment.credit.creditId);
-          break;
-        case 3:
-          compare = a.joinedInstallment.client.fullName.compareTo(b.joinedInstallment.client.fullName);
-          break;
-        case 4:
-          compare = a.cobrado.compareTo(b.cobrado);
-          break;
-        case 5:
-          compare = a.capitalPaid.compareTo(b.capitalPaid);
-          break;
-        case 6:
-          compare = a.interestPaid.compareTo(b.interestPaid);
-          break;
-        case 7:
-          compare = a.moraPaid.compareTo(b.moraPaid);
-          break;
-        case 8:
-          compare = a.joinedInstallment.installment.installmentNumber.compareTo(b.joinedInstallment.installment.installmentNumber);
-          break;
-        case 9:
-          compare = a.statusLabel.compareTo(b.statusLabel);
-          break;
-        default:
-          compare = 0;
+      for (final criterion in _sortCriteria) {
+        int compare = 0;
+        switch (criterion.columnIndex) {
+          case 0:
+            compare = a.joinedInstallment.installment.dueDate.compareTo(b.joinedInstallment.installment.dueDate);
+            break;
+          case 1:
+            compare = a.date.compareTo(b.date);
+            break;
+          case 2:
+            compare = a.joinedInstallment.credit.creditId.compareTo(b.joinedInstallment.credit.creditId);
+            break;
+          case 3:
+            compare = a.joinedInstallment.client.fullName.compareTo(b.joinedInstallment.client.fullName);
+            break;
+          case 4:
+            compare = a.cobrado.compareTo(b.cobrado);
+            break;
+          case 5:
+            compare = a.capitalPaid.compareTo(b.capitalPaid);
+            break;
+          case 6:
+            compare = a.interestPaid.compareTo(b.interestPaid);
+            break;
+          case 7:
+            compare = a.moraPaid.compareTo(b.moraPaid);
+            break;
+          case 8:
+            compare = a.joinedInstallment.installment.installmentNumber.compareTo(b.joinedInstallment.installment.installmentNumber);
+            break;
+          case 9:
+            compare = a.statusLabel.compareTo(b.statusLabel);
+            break;
+        }
+        if (compare != 0) {
+          return criterion.ascending ? compare : -compare;
+        }
       }
-      return _sortAscending ? compare : -compare;
+      return 0;
     });
 
     double totalPaidCapital = 0;
@@ -409,9 +426,9 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
 
     for (final item in filtered) {
       if (item.statusLabel == 'PENDIENTE') {
-        totalPendingCapital += item.capitalPaid;
-        totalPendingInterest += item.interestPaid;
-        totalPendingMora += item.moraPaid;
+        totalPendingCapital += item.expectedCapital;
+        totalPendingInterest += item.expectedInterest;
+        totalPendingMora += item.expectedMora;
         countPending++;
       } else {
         totalPaidCapital += item.capitalPaid;
@@ -507,7 +524,7 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
 
     return ResponsiveSidebarScaffold(
       selectedIndex: selectedIndex,
-      title: 'Módulo de Informes',
+      title: 'Pagos',
       child: content,
     );
   }
@@ -566,17 +583,36 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
                     return Expanded(
                       flex: flex,
                       child: GestureDetector(
-                        onTap: () => _onSort(i, i == _sortColumnIndex ? !_sortAscending : true),
+                        onTap: () => _onSort(i),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Flexible(child: Text(columnHeaders[i], style: headerStyle, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center)),
-                            if (_sortColumnIndex == i)
-                              Icon(
-                                _sortAscending ? Icons.arrow_upward : Icons.arrow_downward,
-                                size: 14, color: Colors.white70,
-                              ),
+                            Builder(
+                              builder: (context) {
+                                final criteriaIndex = _sortCriteria.indexWhere((c) => c.columnIndex == i);
+                                if (criteriaIndex == -1) return const SizedBox.shrink();
+                                final criteria = _sortCriteria[criteriaIndex];
+                                return Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      criteria.ascending ? Icons.arrow_upward : Icons.arrow_downward,
+                                      size: 14, color: Colors.white,
+                                    ),
+                                    if (_sortCriteria.length > 1)
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 2),
+                                        child: Text(
+                                          '${criteriaIndex + 1}',
+                                          style: const TextStyle(fontSize: 10, color: Colors.white70, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                  ],
+                                );
+                              },
+                            ),
                           ],
                         ),
                       ),
@@ -708,28 +744,35 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
       final inst = j.installment;
       final date = (inst.status == InstallmentStatus.paid || inst.paidAmount > 0) ? inst.updatedAt : inst.dueDate;
       final periodStart = _getPeriodStart(date, resolution);
+      final duePeriodStart = _getPeriodStart(inst.dueDate, resolution);
+      final isSamePeriodAsDue = periodStart.isAtSameMomentAs(duePeriodStart);
       
       // Si el periodo cae dentro de los que estamos mostrando en la gráfica, sumar
       if (dataByPeriod.containsKey(periodStart)) {
         final md = dataByPeriod[periodStart]!;
-
-        // VALOR: Capital + Interés
-        final expectedValor = inst.principalPortion + inst.interestPortion;
-        md.expectedValue += expectedValor;
 
         final double intRatio = inst.scheduledAmount > 0 ? inst.interestPortion / inst.scheduledAmount : 0.0;
         final double capRatio = inst.scheduledAmount > 0 ? inst.principalPortion / inst.scheduledAmount : 0.0;
         double pInterest = inst.paidAmount * intRatio;
         double pCapital = inst.paidAmount * capRatio;
         final paidValor = pCapital + pInterest;
-        md.paidValue += paidValor;
-
-        // INTERÉS + RECARGOS
-        final expectedInterestMora = inst.interestPortion + inst.accumulatedMora;
-        md.expectedInterestMora += expectedInterestMora;
-
         final paidInterestMora = pInterest + inst.moraPaid;
+
+        md.paidValue += paidValor;
         md.paidInterestMora += paidInterestMora;
+
+        if (isSamePeriodAsDue) {
+          // Si se grafica en el mismo periodo que vence, la meta es la teórica completa
+          final expectedValor = inst.principalPortion + inst.interestPortion;
+          final expectedInterestMora = inst.interestPortion + inst.accumulatedMora;
+          
+          md.expectedValue += expectedValor;
+          md.expectedInterestMora += expectedInterestMora;
+        } else {
+          // Si se pagó en un periodo distinto, la meta solo es lo pagado para no inflarla
+          md.expectedValue += paidValor;
+          md.expectedInterestMora += paidInterestMora;
+        }
       }
     }
 

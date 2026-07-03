@@ -35,9 +35,9 @@ class _ReportsMainScreenState extends ConsumerState<ReportsMainScreen> {
               child: const TabBar(
                 isScrollable: true,
                 tabs: [
-                  Tab(text: 'Próximos Pagos'),
+                  Tab(text: 'Pagos'),
                   Tab(text: 'Desembolsos y Saldos'),
-                  Tab(text: 'Evolución y Ganancias'),
+                  Tab(text: 'Capital Total'),
                 ],
               ),
             ),
