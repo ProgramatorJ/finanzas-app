@@ -3,6 +3,9 @@ class TreasuryModel {
   final double totalExpenses;
   final double totalInterestsEarned;
   final double totalMoraEarned;
+  final double totalInvestmentsReceived;      // Capital total inyectado por inversores
+  final double totalReturnedToInvestors;      // Capital devuelto a inversores
+  final double totalInterestPaidToInvestors;  // Intereses pagados a inversores
   final DateTime lastUpdated;
 
   TreasuryModel({
@@ -10,6 +13,9 @@ class TreasuryModel {
     required this.totalExpenses,
     required this.totalInterestsEarned,
     required this.totalMoraEarned,
+    required this.totalInvestmentsReceived,
+    required this.totalReturnedToInvestors,
+    required this.totalInterestPaidToInvestors,
     required this.lastUpdated,
   });
 
@@ -19,6 +25,9 @@ class TreasuryModel {
       'totalExpenses': totalExpenses,
       'totalInterestsEarned': totalInterestsEarned,
       'totalMoraEarned': totalMoraEarned,
+      'totalInvestmentsReceived': totalInvestmentsReceived,
+      'totalReturnedToInvestors': totalReturnedToInvestors,
+      'totalInterestPaidToInvestors': totalInterestPaidToInvestors,
       'lastUpdated': lastUpdated.toIso8601String(),
     };
   }
@@ -29,6 +38,9 @@ class TreasuryModel {
       totalExpenses: (map['totalExpenses'] as num?)?.toDouble() ?? 0.0,
       totalInterestsEarned: (map['totalInterestsEarned'] as num?)?.toDouble() ?? 0.0,
       totalMoraEarned: (map['totalMoraEarned'] as num?)?.toDouble() ?? 0.0,
+      totalInvestmentsReceived: (map['totalInvestmentsReceived'] as num?)?.toDouble() ?? 0.0,
+      totalReturnedToInvestors: (map['totalReturnedToInvestors'] as num?)?.toDouble() ?? 0.0,
+      totalInterestPaidToInvestors: (map['totalInterestPaidToInvestors'] as num?)?.toDouble() ?? 0.0,
       lastUpdated: map['lastUpdated'] != null 
           ? DateTime.tryParse(map['lastUpdated']) ?? DateTime.now()
           : DateTime.now(),
@@ -41,6 +53,9 @@ class TreasuryModel {
       totalExpenses: 0.0,
       totalInterestsEarned: 0.0,
       totalMoraEarned: 0.0,
+      totalInvestmentsReceived: 0.0,
+      totalReturnedToInvestors: 0.0,
+      totalInterestPaidToInvestors: 0.0,
       lastUpdated: DateTime.now(),
     );
   }

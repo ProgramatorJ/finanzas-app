@@ -648,13 +648,11 @@ class ResponsiveSidebarScaffold extends ConsumerWidget {
         label: 'Calendario',
         screen: PaymentCalendarScreen(),
       ),
-      /*
       SidebarItem(
         icon: Icons.account_balance,
         label: 'Tesorería',
         screen: TreasuryScreen(),
       ),
-      */
       SidebarItem(
         icon: Icons.bar_chart_rounded,
         label: 'Informes',

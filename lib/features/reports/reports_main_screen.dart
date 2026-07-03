@@ -19,7 +19,7 @@ class _ReportsMainScreenState extends ConsumerState<ReportsMainScreen> {
   Widget build(BuildContext context) {
     final userAsync = ref.watch(currentUserModelProvider);
     final selectedIndex = userAsync.maybeWhen(
-      data: (user) => user?.role == UserRole.admin ? 4 : 3,
+      data: (user) => user?.role == UserRole.admin ? 5 : 3,
       orElse: () => 3,
     );
 

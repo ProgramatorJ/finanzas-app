@@ -9,6 +9,8 @@ import '../models/payment_model.dart';
 import '../models/appointment_model.dart';
 import '../models/expense_model.dart';
 import '../models/treasury_model.dart';
+import '../models/investment_model.dart';
+import '../models/investor_payment_model.dart';
 import '../constants/app_constants.dart';
 import '../utils/mora_engine.dart';
 import '../utils/commercial_calendar.dart';
@@ -573,6 +575,145 @@ class FirestoreService {
         .snapshots()
         .map((snap) => snap.docs
             .map((doc) => ExpenseModel.fromMap(doc.data(), doc.id))
+            .toList());
+  }
+
+  // ─── INVERSIONES Y FONDEADORES ──────────────────────────────────────────
+
+  /// Registra una nueva inversión y actualiza la tesorería de forma atómica.
+  Future<String> registerInvestmentTransaction(InvestmentModel investment) async {
+    final docRef = _db.collection('investments').doc();
+    final newInvestment = InvestmentModel(
+      investmentId: docRef.id,
+      investorName: investment.investorName,
+      amount: investment.amount,
+      monthlyInterestRate: investment.monthlyInterestRate,
+      totalInterestPaid: 0.0,
+      totalPrincipalReturned: 0.0,
+      outstandingBalance: investment.amount,
+      status: InvestmentStatus.active,
+      notes: investment.notes,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+
+    final batch = _db.batch();
+    batch.set(docRef, newInvestment.toMap());
+
+    // Incrementar la caja con el dinero del inversor
+    batch.set(
+      _db.collection('treasury').doc('main'),
+      {
+        'currentBalance': FieldValue.increment(investment.amount),
+        'totalInvestmentsReceived': FieldValue.increment(investment.amount),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await batch.commit();
+    return docRef.id;
+  }
+
+  /// Registra un pago a un inversor (interés o devolución de capital) y actualiza todo atómicamente.
+  Future<void> registerInvestorPaymentTransaction({
+    required String investmentId,
+    required InvestorPaymentModel payment,
+  }) async {
+    final payDocRef = _db.collection('investments').doc(investmentId).collection('investor_payments').doc();
+
+    final newPayment = InvestorPaymentModel(
+      paymentId: payDocRef.id,
+      investmentId: investmentId,
+      amount: payment.amount,
+      concept: payment.concept,
+      notes: payment.notes,
+      paymentDate: payment.paymentDate,
+      createdAt: DateTime.now(),
+    );
+
+    final batch = _db.batch();
+    batch.set(payDocRef, newPayment.toMap());
+
+    // Actualizar la inversión según el concepto
+    final investmentRef = _db.collection('investments').doc(investmentId);
+    if (payment.concept == InvestorPaymentConcept.interestPayment) {
+      batch.update(investmentRef, {
+        'totalInterestPaid': FieldValue.increment(payment.amount),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      // Actualizar tesorería: sale dinero de la caja para intereses
+      batch.set(
+        _db.collection('treasury').doc('main'),
+        {
+          'currentBalance': FieldValue.increment(-payment.amount),
+          'totalInterestPaidToInvestors': FieldValue.increment(payment.amount),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } else {
+      // Devolución de capital
+      batch.update(investmentRef, {
+        'totalPrincipalReturned': FieldValue.increment(payment.amount),
+        'outstandingBalance': FieldValue.increment(-payment.amount),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      batch.set(
+        _db.collection('treasury').doc('main'),
+        {
+          'currentBalance': FieldValue.increment(-payment.amount),
+          'totalReturnedToInvestors': FieldValue.increment(payment.amount),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
+  }
+
+  /// Marca una inversión como completada (todo el capital fue devuelto).
+  Future<void> completeInvestment(String investmentId) async {
+    await _db.collection('investments').doc(investmentId).update({
+      'status': 'completed',
+      'outstandingBalance': 0.0,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
+
+  /// Stream de todas las inversiones.
+  Stream<List<InvestmentModel>> getInvestmentsStream() {
+    return _db
+        .collection('investments')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => InvestmentModel.fromMap(doc.data(), doc.id))
+            .toList());
+  }
+
+  /// Stream de los pagos realizados a un inversor específico.
+  Stream<List<InvestorPaymentModel>> getInvestorPaymentsStream(String investmentId) {
+    return _db
+        .collection('investments')
+        .doc(investmentId)
+        .collection('investor_payments')
+        .orderBy('paymentDate', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => InvestorPaymentModel.fromMap(doc.data(), doc.id, investmentId: investmentId))
+            .toList());
+  }
+
+  /// Stream de todos los pagos realizados a inversores en el sistema (Collection Group).
+  Stream<List<InvestorPaymentModel>> getAllInvestorPaymentsStream() {
+    return _db
+        .collectionGroup('investor_payments')
+        .orderBy('paymentDate', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => InvestorPaymentModel.fromMap(doc.data(), doc.id))
             .toList());
   }
 

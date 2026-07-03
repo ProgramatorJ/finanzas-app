@@ -93,5 +93,20 @@ service cloud.firestore {
     match /expenses/{expenseId} {
       allow read, write: if isAdmin();
     }
+
+    // ── /investments ──────────────────────────────────────────────────
+    match /investments/{investmentId} {
+      allow read, write: if isAdmin();
+
+      // Pagos a inversores (subcolección)
+      match /investor_payments/{paymentId} {
+        allow read, write: if isAdmin();
+      }
+    }
+
+    // Regla global para consultas de grupo de pagos de inversores (collection group queries)
+    match /{path=**}/investor_payments/{paymentId} {
+      allow read, write: if isAdmin();
+    }
   }
 }
