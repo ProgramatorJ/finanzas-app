@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:google_fonts/google_fonts.dart';
+import '../../shared/theme/app_theme.dart';
 
 import '../../core/models/credit_model.dart';
 import '../../core/models/installment_model.dart';
@@ -136,10 +138,8 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
 
     final clientMap = {for (final cl in clients) cl.clientId: cl};
     
-    // Solo créditos con saldo (activos o con saldo pendiente) para la tabla.
     final activeCredits = credits.where((c) => c.status == CreditStatus.active || c.status == CreditStatus.restructured || c.outstandingBalance > 0).toList();
 
-    // Ordenar activos para la tabla
     activeCredits.sort((a, b) {
       int cmp = 0;
       switch (_sortColumnIndex) {
@@ -171,7 +171,6 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
       return _sortAscending ? cmp : -cmp;
     });
 
-    // Generar periodos a mostrar para la gráfica
     final now = DateTime.now();
     DateTime latestPeriodStart = _getPeriodStart(now, _selectedPeriod);
     
@@ -183,7 +182,6 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
     }
     contiguousPeriods = contiguousPeriods.reversed.toList();
 
-    // Map the installments to credits for faster access
     final installmentsByCredit = <String, List<InstallmentModel>>{};
     for (var inst in installments) {
       if (inst.creditId != null) {
@@ -280,13 +278,19 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // --- Controles de Filtro ---
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Theme.of(context).cardTheme.color,
-              borderRadius: BorderRadius.circular(12),
+              color: isDark ? const Color(0xFF14141E) : Colors.white,
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFF4A84E6).withValues(alpha: 0.05),
+                  blurRadius: 20,
+                  spreadRadius: 2,
+                ),
+              ],
             ),
             child: Wrap(
               spacing: 16,
@@ -336,17 +340,21 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
           ),
           const SizedBox(height: 24),
 
-          // --- Gráfica ---
-          Text('Capital Total (Evolución de Saldos)', style: Theme.of(context).textTheme.titleLarge),
+          _buildSectionHeader('Capital Total (Evolución de Saldos)', isDark),
           const SizedBox(height: 16),
           Container(
             height: 350,
             padding: const EdgeInsets.only(top: 24, right: 24, left: 16, bottom: 16),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1E1E2C) : Colors.white,
+              color: isDark ? const Color(0xFF14141E) : Colors.white,
               borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
               boxShadow: [
-                BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
+                BoxShadow(
+                  color: const Color(0xFF4A84E6).withValues(alpha: 0.05),
+                  blurRadius: 20,
+                  spreadRadius: 2,
+                ),
               ],
             ),
             child: LineChart(
@@ -406,39 +414,83 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                       return FlSpot(i.toDouble(), dataByPeriod[contiguousPeriods[i]]!.capitalSaldo);
                     }),
                     isCurved: true,
-                    color: Colors.blueAccent,
+                    gradient: const LinearGradient(colors: [Color(0xFF4A84E6), Color(0xFF6BA0FF)]),
                     barWidth: 3,
                     isStrokeCapRound: true,
-                    dotData: const FlDotData(show: true),
+                    dotData: FlDotData(
+                      show: true,
+                      getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                        radius: 4,
+                        color: const Color(0xFF4A84E6),
+                        strokeWidth: 2,
+                        strokeColor: Colors.white,
+                      ),
+                    ),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      gradient: LinearGradient(
+                        colors: [const Color(0xFF4A84E6).withValues(alpha: 0.15), const Color(0xFF4A84E6).withValues(alpha: 0.0)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
                   ),
                   LineChartBarData(
                     spots: List.generate(contiguousPeriods.length, (i) {
                       return FlSpot(i.toDouble(), dataByPeriod[contiguousPeriods[i]]!.interesMoraSaldo);
                     }),
                     isCurved: true,
-                    color: Colors.amber,
+                    gradient: const LinearGradient(colors: [Color(0xFFFFA726), Color(0xFFFFD54F)]),
                     barWidth: 3,
                     isStrokeCapRound: true,
-                    dotData: const FlDotData(show: true),
+                    dotData: FlDotData(
+                      show: true,
+                      getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                        radius: 4,
+                        color: const Color(0xFFFFA726),
+                        strokeWidth: 2,
+                        strokeColor: Colors.white,
+                      ),
+                    ),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      gradient: LinearGradient(
+                        colors: [Colors.amber.withValues(alpha: 0.15), Colors.amber.withValues(alpha: 0.0)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
+                    ),
                   ),
                   LineChartBarData(
                     spots: List.generate(contiguousPeriods.length, (i) {
                       return FlSpot(i.toDouble(), dataByPeriod[contiguousPeriods[i]]!.totalSaldo);
                     }),
                     isCurved: true,
-                    color: Colors.purpleAccent,
+                    gradient: const LinearGradient(colors: [Color(0xFF7C4DFF), Color(0xFFB388FF)]),
                     barWidth: 4,
                     isStrokeCapRound: true,
-                    dotData: const FlDotData(show: true),
+                    dotData: FlDotData(
+                      show: true,
+                      getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                        radius: 5,
+                        color: const Color(0xFF7C4DFF),
+                        strokeWidth: 2,
+                        strokeColor: Colors.white,
+                      ),
+                    ),
                     belowBarData: BarAreaData(
                       show: true,
-                      color: Colors.purpleAccent.withOpacity(0.1),
+                      gradient: LinearGradient(
+                        colors: [const Color(0xFF7C4DFF).withValues(alpha: 0.15), const Color(0xFF7C4DFF).withValues(alpha: 0.0)],
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                      ),
                     ),
                   ),
                 ],
                 lineTouchData: LineTouchData(
                   touchTooltipData: LineTouchTooltipData(
-                    getTooltipColor: (spot) => isDark ? Colors.blueGrey.shade900 : Colors.white,
+                    getTooltipColor: (spot) => isDark ? const Color(0xFF1A1A2E) : Colors.grey.shade200,
                     getTooltipItems: (touchedSpots) {
                       return touchedSpots.map((spot) {
                         final date = contiguousPeriods[spot.x.toInt()];
@@ -458,28 +510,26 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
             ),
           ),
           const SizedBox(height: 16),
-          // Leyenda
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              _buildLegendItem(Colors.blueAccent, 'Saldo Capital'),
-              const SizedBox(width: 16),
-              _buildLegendItem(Colors.amber, 'Saldo Interés+Mora'),
-              const SizedBox(width: 16),
-              _buildLegendItem(Colors.purpleAccent, 'Saldo Total'),
-            ],
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Wrap(
+              spacing: 24,
+              alignment: WrapAlignment.center,
+              children: [
+                _buildLegendDot(const Color(0xFF4A84E6), 'Saldo Capital'),
+                _buildLegendDot(Colors.amber, 'Saldo Interés+Mora'),
+                _buildLegendDot(const Color(0xFF7C4DFF), 'Saldo Total'),
+              ],
+            ),
           ),
-
           const SizedBox(height: 32),
-
-          // --- Tabla de Datos ---
-          Text('Detalle de Créditos Activos', style: Theme.of(context).textTheme.titleLarge),
+          _buildSectionHeader('Detalle de Créditos Activos', isDark),
           const SizedBox(height: 16),
           Container(
             width: double.infinity,
             decoration: BoxDecoration(
-              color: Theme.of(context).cardTheme.color,
-              borderRadius: BorderRadius.circular(12),
+              color: isDark ? const Color(0xFF14141E) : Colors.white,
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
             ),
             child: activeCredits.isEmpty 
@@ -553,11 +603,41 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
     );
   }
 
-  Widget _buildLegendItem(Color color, String text) {
+  Widget _buildSectionHeader(String title, bool isDark) {
     return Row(
       children: [
-        Container(width: 12, height: 12, color: color),
-        const SizedBox(width: 4),
+        Container(
+          width: 4,
+          height: 24,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF4A84E6), Color(0xFF00C9A7)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(title, style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
+  Widget _buildLegendDot(Color color, String text) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 12,
+          height: 12,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(3),
+            boxShadow: [BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 4)],
+          ),
+        ),
+        const SizedBox(width: 6),
         Text(text, style: const TextStyle(fontSize: 12)),
       ],
     );

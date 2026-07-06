@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:google_fonts/google_fonts.dart';
+
 
 import '../../shared/theme/app_theme.dart';
 import '../../core/models/credit_model.dart';
@@ -236,13 +238,19 @@ class _DisbursementsReportScreenState extends ConsumerState<DisbursementsReportS
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // --- Controles de Filtro ---
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: Theme.of(context).cardTheme.color,
-                  borderRadius: BorderRadius.circular(12),
+                  color: isDark ? const Color(0xFF14141E) : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF4A84E6).withValues(alpha: 0.05),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                    ),
+                  ],
                 ),
                 child: Wrap(
                   spacing: 16,
@@ -302,16 +310,21 @@ class _DisbursementsReportScreenState extends ConsumerState<DisbursementsReportS
               const SizedBox(height: 24),
 
               // --- Gráfica ---
-              Text('Evolución', style: Theme.of(context).textTheme.titleLarge),
+              _buildSectionHeader('Evolución', isDark),
               const SizedBox(height: 16),
               Container(
                 height: 300,
                 padding: const EdgeInsets.only(top: 24, right: 24, left: 16, bottom: 16),
                 decoration: BoxDecoration(
-                  color: isDark ? const Color(0xFF1E1E2C) : Colors.white,
+                  color: isDark ? const Color(0xFF14141E) : Colors.white,
                   borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
                   boxShadow: [
-                    BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
+                    BoxShadow(
+                      color: const Color(0xFF4A84E6).withValues(alpha: 0.05),
+                      blurRadius: 20,
+                      spreadRadius: 2,
+                    ),
                   ],
                 ),
                 child: BarChart(
@@ -321,7 +334,7 @@ class _DisbursementsReportScreenState extends ConsumerState<DisbursementsReportS
                     barTouchData: BarTouchData(
                       enabled: true,
                       touchTooltipData: BarTouchTooltipData(
-                        getTooltipColor: (group) => isDark ? Colors.blueGrey.shade900 : Colors.white,
+                        getTooltipColor: (group) => isDark ? const Color(0xFF1A1A2E) : Colors.grey.shade200,
                         getTooltipItem: (group, groupIndex, rod, rodIndex) {
                           final date = contiguousPeriods[group.x];
                           final md = dataByPeriod[date]!;
@@ -429,14 +442,21 @@ class _DisbursementsReportScreenState extends ConsumerState<DisbursementsReportS
                         barRods: [
                           BarChartRodData(
                             toY: yVal,
-                            color: _selectedMetric == DisbursementMetric.saldoTotal ? Colors.transparent : AppTheme.primaryColor,
+                            color: _selectedMetric == DisbursementMetric.saldoTotal ? Colors.transparent : null,
+                            gradient: _selectedMetric != DisbursementMetric.saldoTotal
+                                ? const LinearGradient(
+                                    colors: [Color(0xFF4A84E6), Color(0xFF6BA0FF)],
+                                    begin: Alignment.bottomCenter,
+                                    end: Alignment.topCenter,
+                                  )
+                                : null,
                             width: 20,
                             borderRadius: BorderRadius.circular(4),
                             rodStackItems: stackItems.isNotEmpty ? stackItems : null,
                             backDrawRodData: BackgroundBarChartRodData(
                               show: true,
                               toY: maxY * 1.2,
-                              color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),
+                              color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
                             ),
                           ),
                         ],
@@ -464,13 +484,13 @@ class _DisbursementsReportScreenState extends ConsumerState<DisbursementsReportS
               const SizedBox(height: 32),
 
               // --- Tabla de Datos ---
-              Text('Detalle por Periodo', style: Theme.of(context).textTheme.titleLarge),
+              _buildSectionHeader('Detalle por Periodo', isDark),
               const SizedBox(height: 16),
               Container(
                 width: double.infinity,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).cardTheme.color,
-                  borderRadius: BorderRadius.circular(12),
+                  color: isDark ? const Color(0xFF14141E) : Colors.white,
+                  borderRadius: BorderRadius.circular(16),
                   border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
                 ),
                 child: SingleChildScrollView(
@@ -514,6 +534,27 @@ class _DisbursementsReportScreenState extends ConsumerState<DisbursementsReportS
     );
   }
 
+  Widget _buildSectionHeader(String title, bool isDark) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 24,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF4A84E6), Color(0xFF00C9A7)],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(title, style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold)),
+      ],
+    );
+  }
+
   Widget _buildLegendItem(Color color, String text) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -521,9 +562,13 @@ class _DisbursementsReportScreenState extends ConsumerState<DisbursementsReportS
         Container(
           width: 12,
           height: 12,
-          decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(2)),
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(3),
+            boxShadow: [BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 4)],
+          ),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 6),
         Text(text, style: const TextStyle(fontSize: 12)),
       ],
     );

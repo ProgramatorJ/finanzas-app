@@ -270,7 +270,7 @@ class _BalanceSheetReportScreenState extends ConsumerState<BalanceSheetReportScr
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: isDark ? const Color(0xFF1E1E2C) : Colors.grey.shade100,
+              color: isDark ? const Color(0xFF14141E) : Colors.grey.shade100,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(

@@ -3,7 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../core/models/payment_model.dart';
+
 
 import '../../shared/theme/app_theme.dart';
 import '../../shared/theme/responsive_sidebar_scaffold.dart';
@@ -449,7 +451,12 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
         children: [
           Container(
             padding: const EdgeInsets.all(16),
-            color: isDark ? const Color(0xFF0A0A14) : Colors.white,
+            decoration: BoxDecoration(
+              color: isDark ? const Color(0xFF14141E) : Colors.white,
+              border: Border(
+                bottom: BorderSide(color: isDark ? Colors.white10 : Colors.black12),
+              ),
+            ),
             child: Wrap(
               spacing: 16,
               runSpacing: 16,
@@ -560,9 +567,10 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
     return Container(
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF14141E) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 4)),
         ],
       ),
       clipBehavior: Clip.hardEdge,
@@ -575,7 +583,13 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
             children: [
               // --- HEADER FIJO ---
               Container(
-                color: AppTheme.primaryColor,
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF4A84E6), Color(0xFF3A6FD4)],
+                    begin: Alignment.centerLeft,
+                    end: Alignment.centerRight,
+                  ),
+                ),
                 padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
                 child: Row(
                   children: List.generate(columnHeaders.length, (i) {
@@ -689,30 +703,56 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
 
   Widget _buildTotalCard(String title, double amount, double moraAmount, int count, Color color, bool isDark) {
     return Container(
-      width: 250,
-      padding: const EdgeInsets.all(16),
+      width: 280,
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF14141E) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withOpacity(0.3), width: 2),
+        gradient: LinearGradient(
+          colors: [
+            isDark ? const Color(0xFF14141E) : Colors.white,
+            isDark ? color.withValues(alpha: 0.05) : color.withValues(alpha: 0.03),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
         boxShadow: [
-          BoxShadow(color: color.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(color: color.withValues(alpha: 0.1), blurRadius: 16, spreadRadius: 2),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-          const SizedBox(height: 8),
-          Text(copFormatter.format(amount), style: TextStyle(color: color, fontWeight: FontWeight.bold, fontSize: 24)),
-          const SizedBox(height: 8),
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('$count cuotas', style: const TextStyle(color: Colors.grey, fontSize: 12)),
-              Text('Mora: ${copFormatter.format(moraAmount)}', style: const TextStyle(color: Colors.redAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(
+                  title.contains('Recibidos') ? Icons.payments : (title.contains('Pendientes') ? Icons.schedule : Icons.analytics),
+                  color: color,
+                  size: 20,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white70 : Colors.black54)),
+                    Text('$count cuotas', style: TextStyle(fontSize: 10, color: isDark ? Colors.white30 : Colors.black38)),
+                  ],
+                ),
+              ),
             ],
-          )
+          ),
+          const SizedBox(height: 16),
+          Text(copFormatter.format(amount), style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
+          const SizedBox(height: 4),
+          Text('Mora: ${copFormatter.format(moraAmount)}', style: TextStyle(color: AppTheme.errorColor, fontSize: 11, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -789,9 +829,14 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: isDark ? const Color(0xFF14141E) : Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: isDark ? Colors.white10 : Colors.black12),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 10, offset: const Offset(0, 4)),
+          BoxShadow(
+            color: const Color(0xFF4A84E6).withValues(alpha: 0.05),
+            blurRadius: 20,
+            spreadRadius: 2,
+          ),
         ],
       ),
       child: Column(
@@ -800,7 +845,7 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Histórico de Recaudos', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              Text('Histórico de Recaudos', style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold)),
               Wrap(
                 spacing: 16,
                 crossAxisAlignment: WrapCrossAlignment.center,
@@ -893,7 +938,7 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
                     barTouchData: BarTouchData(
                       enabled: true,
                       touchTooltipData: BarTouchTooltipData(
-                        getTooltipColor: (group) => isDark ? Colors.grey.shade800 : Colors.grey.shade200,
+                        getTooltipColor: (group) => isDark ? const Color(0xFF1A1A2E) : Colors.grey.shade200,
                         getTooltipItem: (group, groupIndex, rod, rodIndex) {
                           final isValor = rodIndex == 0;
                           final label = isValor ? 'VALOR' : 'INT+MORA';
@@ -952,24 +997,32 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
                         barRods: [
                           BarChartRodData(
                             toY: md.paidValue,
-                            color: AppTheme.primaryColor,
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF4A84E6), Color(0xFF6BA0FF)],
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.topCenter,
+                            ),
                             width: 20,
                             borderRadius: BorderRadius.circular(4),
                             backDrawRodData: BackgroundBarChartRodData(
                               show: true,
                               toY: max(md.expectedValue, md.paidValue),
-                              color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),
+                              color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
                             ),
                           ),
                           BarChartRodData(
                             toY: md.paidInterestMora,
-                            color: AppTheme.errorColor,
+                            gradient: LinearGradient(
+                              colors: [AppTheme.errorColor, AppTheme.errorColor.withValues(alpha: 0.7)],
+                              begin: Alignment.bottomCenter,
+                              end: Alignment.topCenter,
+                            ),
                             width: 20,
                             borderRadius: BorderRadius.circular(4),
                             backDrawRodData: BackgroundBarChartRodData(
                               show: true,
                               toY: max(md.expectedInterestMora, md.paidInterestMora),
-                              color: isDark ? Colors.white10 : Colors.black.withOpacity(0.05),
+                              color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
                             ),
                           ),
                         ],
@@ -993,10 +1046,11 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
           decoration: BoxDecoration(
             color: isOutline ? Colors.transparent : color,
             border: isOutline ? Border.all(color: color, width: 2) : null,
-            borderRadius: BorderRadius.circular(2),
+            borderRadius: BorderRadius.circular(3),
+            boxShadow: isOutline ? null : [BoxShadow(color: color.withValues(alpha: 0.4), blurRadius: 4)],
           ),
         ),
-        const SizedBox(width: 4),
+        const SizedBox(width: 6),
         Text(text, style: const TextStyle(fontSize: 12)),
       ],
     );
