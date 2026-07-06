@@ -1124,62 +1124,17 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
     final DateTime effectiveStart = filterStart.isBefore(cutoffDate) ? cutoffDate : filterStart;
 
     // --- CÁLCULOS ACUMULADOS PARA EL SALDO EN CAJA (Hasta el fin del periodo 'filterEnd', respetando cutoff) ---
-    double recSubs = 0;
-    for (var p in payments) {
-      if (!p.paymentDate.isBefore(cutoffDate)) {
-        if (!hasFilter || p.paymentDate.isBefore(filterEnd) || p.paymentDate.isAtSameMomentAs(filterEnd)) {
-          recSubs += p.amountReceived;
-        }
-      }
-    }
+    final metrics = FinancialMetrics.calculate(
+      credits: credits,
+      payments: payments,
+      expenses: expenses,
+      investments: investments,
+      investorPayments: investorPayments,
+      adjustments: adjustments,
+      dateLimit: hasFilter ? filterEnd : null,
+    );
 
-    double invSubs = 0;
-    for (var inv in investments) {
-      if (!inv.createdAt.isBefore(cutoffDate)) {
-        if (!hasFilter || inv.createdAt.isBefore(filterEnd) || inv.createdAt.isAtSameMomentAs(filterEnd)) {
-          invSubs += inv.amount;
-        }
-      }
-    }
-
-    double credSubs = 0;
-    for (var c in credits) {
-      if (!c.disbursementDate.isBefore(cutoffDate)) {
-        if (!hasFilter || c.disbursementDate.isBefore(filterEnd) || c.disbursementDate.isAtSameMomentAs(filterEnd)) {
-          credSubs += c.principalAmount;
-        }
-      }
-    }
-
-    double expSubs = 0;
-    for (var e in expenses) {
-      if (!e.date.isBefore(cutoffDate)) {
-        if (!hasFilter || e.date.isBefore(filterEnd) || e.date.isAtSameMomentAs(filterEnd)) {
-          expSubs += e.amount;
-        }
-      }
-    }
-
-    double ipSubs = 0;
-    for (var ip in investorPayments) {
-      if (!ip.paymentDate.isBefore(cutoffDate)) {
-        if (!hasFilter || ip.paymentDate.isBefore(filterEnd) || ip.paymentDate.isAtSameMomentAs(filterEnd)) {
-          ipSubs += ip.amount;
-        }
-      }
-    }
-
-    // Incluir ajustes manuales de caja en el cálculo acumulado (respetando cutoff)
-    double adjSubs = 0;
-    for (var adj in adjustments) {
-      if (!adj.date.isBefore(cutoffDate)) {
-        if (!hasFilter || adj.date.isBefore(filterEnd) || adj.date.isAtSameMomentAs(filterEnd)) {
-          adjSubs += adj.amount;
-        }
-      }
-    }
-
-    final double currentBalance = recSubs + invSubs - credSubs - expSubs - ipSubs + adjSubs;
+    final double currentBalance = metrics.cajaActual;
 
     // --- CÁLCULOS ESPECÍFICOS DEL PERIODO (Filtrados estrictamente en [effectiveStart, filterEnd]) ---
     double interestsEarned = 0;
@@ -1225,26 +1180,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
       }
     }
 
-    // Pasivos (Deuda acumulada total de cara al fin del periodo, respetando cutoff)
-    double invTotalUpToEnd = 0;
-    for (var inv in investments) {
-      if (!inv.createdAt.isBefore(cutoffDate)) {
-        if (!hasFilter || inv.createdAt.isBefore(filterEnd) || inv.createdAt.isAtSameMomentAs(filterEnd)) {
-          invTotalUpToEnd += inv.amount;
-        }
-      }
-    }
-    double retTotalUpToEnd = 0;
-    for (var ip in investorPayments) {
-      if (ip.concept == InvestorPaymentConcept.principalReturn) {
-        if (!ip.paymentDate.isBefore(cutoffDate)) {
-          if (!hasFilter || ip.paymentDate.isBefore(filterEnd) || ip.paymentDate.isAtSameMomentAs(filterEnd)) {
-            retTotalUpToEnd += ip.amount;
-          }
-        }
-      }
-    }
-    final pasivosActivos = invTotalUpToEnd - retTotalUpToEnd;
+    final pasivosActivos = metrics.deudaInversores;
 
     final utilidadBruta = interestsEarned + moraEarned;
     final utilidadNeta = utilidadBruta - expensesPaid - interestPaidToInvestors;

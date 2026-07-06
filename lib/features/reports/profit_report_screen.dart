@@ -105,10 +105,12 @@ class _ProfitReportScreenState extends ConsumerState<ProfitReportScreen> {
     final investorPaymentsAsync = ref.watch(allInvestorPaymentsStreamProvider);
     final adjustmentsAsync = ref.watch(cashAdjustmentsStreamProvider);
     final userAsync = ref.watch(currentUserModelProvider);
+    final centralMetricsAsync = ref.watch(financialMetricsProvider);
 
     final isLoading = creditsAsync.isLoading || paymentsAsync.isLoading ||
         expensesAsync.isLoading || investmentsAsync.isLoading ||
-        investorPaymentsAsync.isLoading || adjustmentsAsync.isLoading;
+        investorPaymentsAsync.isLoading || adjustmentsAsync.isLoading ||
+        centralMetricsAsync.isLoading;
 
     if (isLoading) {
       if (widget.isEmbedded) return const Center(child: CircularProgressIndicator());
@@ -123,6 +125,15 @@ class _ProfitReportScreenState extends ConsumerState<ProfitReportScreen> {
     final payments = paymentsAsync.value ?? [];
     final expenses = expensesAsync.value ?? [];
     final investments = investmentsAsync.value ?? [];
+    final centralMetrics = centralMetricsAsync.value ?? FinancialMetrics(
+      cajaActual: 0,
+      carteraActivaCapital: 0,
+      interesesPorCobrar: 0,
+      moraAcumulada: 0,
+      deudaInversores: 0,
+      patrimonioNeto: 0,
+      utilidadNeta: 0,
+    );
     final investorPayments = investorPaymentsAsync.value ?? [];
     final adjustments = adjustmentsAsync.value ?? [];
 
@@ -185,26 +196,8 @@ class _ProfitReportScreenState extends ConsumerState<ProfitReportScreen> {
     }
 
     final utilidadBruta = totalInterestEarned + totalMoraEarned;
-    final utilidadNeta = utilidadBruta - totalExpenses - totalInterestPaidInvestors;
-
-    // Saldo en caja recalculado
-    double cashReceivedFromPayments = 0;
-    for (var p in payments) {
-      if (!p.paymentDate.isBefore(cutoffDate)) {
-        cashReceivedFromPayments += p.amountReceived;
-      }
-    }
-    double cashPaidToInvestors = 0;
-    for (var ip in investorPayments) {
-      if (!ip.paymentDate.isBefore(cutoffDate)) {
-        cashPaidToInvestors += ip.amount;
-      }
-    }
-
-    final cashBalance = cashReceivedFromPayments
-        + totalInvReceived - totalCapitalLent - totalExpenses
-        - cashPaidToInvestors
-        + totalAdjustments;
+    final utilidadNeta = centralMetrics.utilidadNeta;
+    final cashBalance = centralMetrics.cajaActual;
 
     // ═══ DATOS POR PERIODO PARA EL GRÁFICO ═══
     final now = DateTime.now();

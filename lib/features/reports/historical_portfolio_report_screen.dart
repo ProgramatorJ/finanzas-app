@@ -6,7 +6,6 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../shared/theme/app_theme.dart';
 
 import '../../core/models/credit_model.dart';
-import '../../core/models/installment_model.dart';
 import '../calendar/calendar_providers.dart'; // Para joinedInstallmentsProvider
 import '../credits/credit_list_screen.dart'; // Para allCreditsStreamProvider, creditsClientsStreamProvider
 import '../shared/financial_providers.dart'; // Para providers de Tesoreria
@@ -127,21 +126,21 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
   Widget build(BuildContext context) {
     final creditsAsync = ref.watch(allCreditsStreamProvider);
     final clientsAsync = ref.watch(creditsClientsStreamProvider);
-    final allInstallmentsAsync = ref.watch(allInstallmentsStreamProvider);
     final paymentsAsync = ref.watch(allPaymentsProvider);
     final expensesAsync = ref.watch(expensesStreamProvider);
     final investmentsAsync = ref.watch(investmentsStreamProvider);
     final investorPaymentsAsync = ref.watch(allInvestorPaymentsStreamProvider);
     final adjustmentsAsync = ref.watch(cashAdjustmentsStreamProvider);
+    final centralMetricsAsync = ref.watch(financialMetricsProvider);
 
     final isLoading = creditsAsync.isLoading ||
         clientsAsync.isLoading ||
-        allInstallmentsAsync.isLoading ||
         paymentsAsync.isLoading ||
         expensesAsync.isLoading ||
         investmentsAsync.isLoading ||
         investorPaymentsAsync.isLoading ||
-        adjustmentsAsync.isLoading;
+        adjustmentsAsync.isLoading ||
+        centralMetricsAsync.isLoading;
 
     if (isLoading) {
       return const Center(child: CircularProgressIndicator());
@@ -149,12 +148,20 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
 
     final credits = creditsAsync.value ?? [];
     final clients = clientsAsync.value ?? [];
-    final installments = allInstallmentsAsync.value ?? [];
     final payments = paymentsAsync.value ?? [];
     final expenses = expensesAsync.value ?? [];
     final investments = investmentsAsync.value ?? [];
     final investorPayments = investorPaymentsAsync.value ?? [];
     final adjustments = adjustmentsAsync.value ?? [];
+    final centralMetrics = centralMetricsAsync.value ?? FinancialMetrics(
+      cajaActual: 0,
+      carteraActivaCapital: 0,
+      interesesPorCobrar: 0,
+      moraAcumulada: 0,
+      deudaInversores: 0,
+      patrimonioNeto: 0,
+      utilidadNeta: 0,
+    );
 
     final clientMap = {for (final cl in clients) cl.clientId: cl};
     
@@ -202,13 +209,6 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
     }
     contiguousPeriods = contiguousPeriods.reversed.toList();
 
-    final installmentsByCredit = <String, List<InstallmentModel>>{};
-    for (var inst in installments) {
-      if (inst.creditId != null) {
-        installmentsByCredit.putIfAbsent(inst.creditId!, () => []).add(inst);
-      }
-    }
-
     final Map<DateTime, _HistoricalPeriodData> dataByPeriod = {};
     for (var p in contiguousPeriods) {
       dataByPeriod[p] = _HistoricalPeriodData();
@@ -220,57 +220,18 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
 
       double totalCapitalDesembolsado = 0;
       double totalCapitalPagado = 0;
-      
-      double totalInteresEsperado = 0;
-      double totalInteresPagado = 0;
-      
-      double totalMoraGenerada = 0;
-      double totalMoraPagada = 0;
 
       for (var c in credits) {
         if (c.disbursementDate.isBefore(pEnd) || c.disbursementDate.isAtSameMomentAs(pEnd)) {
           totalCapitalDesembolsado += c.principalAmount;
-          totalInteresEsperado += c.totalInterest;
           
-          final insts = installmentsByCredit[c.creditId] ?? [];
-          for (var inst in insts) {
-            if (inst.paidAmount > 0 && (inst.updatedAt.isBefore(pEnd) || inst.updatedAt.isAtSameMomentAs(pEnd))) {
-               double capitalPagado = inst.status == InstallmentStatus.paid ? inst.principalPortion : 0;
-               if (inst.status != InstallmentStatus.paid && inst.paidAmount > inst.accumulatedMora + inst.interestPortion) {
-                 capitalPagado = inst.paidAmount - inst.accumulatedMora - inst.interestPortion;
-               }
-               totalCapitalPagado += capitalPagado;
-
-               double interesPagado = inst.status == InstallmentStatus.paid ? inst.interestPortion : 0;
-               if (inst.status != InstallmentStatus.paid && inst.paidAmount > 0) {
-                 double moraCobrada = inst.paidAmount > inst.accumulatedMora ? inst.accumulatedMora : inst.paidAmount;
-                 double resto = inst.paidAmount - moraCobrada;
-                 interesPagado = resto > inst.interestPortion ? inst.interestPortion : resto;
-               }
-               totalInteresPagado += interesPagado;
-               
-               totalMoraPagada += inst.moraPaid;
-            }
-
-            final moraStart = inst.moraStartDate ?? inst.dueDate;
-            if (moraStart.isBefore(pEnd) && inst.isMoraActive && !inst.isMoraExempt) {
-               DateTime endCalculationDate = pEnd;
-               if (inst.status == InstallmentStatus.paid && inst.updatedAt.isBefore(pEnd)) {
-                 endCalculationDate = inst.updatedAt;
-               }
-               
-               int daysLate = endCalculationDate.difference(moraStart).inDays;
-               if (daysLate > 0) {
-                 double moraHistorica = inst.moraBase * inst.dailyMoraRate * daysLate;
-                 if (moraHistorica > inst.accumulatedMora && endCalculationDate == pEnd && inst.status != InstallmentStatus.paid) {
-                   moraHistorica = inst.accumulatedMora;
-                 } else if (inst.status == InstallmentStatus.paid) {
-                   moraHistorica = inst.accumulatedMora;
-                 }
-                 totalMoraGenerada += moraHistorica;
-               }
+          double capitalPagado = 0;
+          for (var pay in payments) {
+            if (pay.creditId == c.creditId && (pay.paymentDate.isBefore(pEnd) || pay.paymentDate.isAtSameMomentAs(pEnd))) {
+              capitalPagado += pay.appliedToPrincipal;
             }
           }
+          totalCapitalPagado += capitalPagado;
         }
       }
 
@@ -280,9 +241,9 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
       // Calcular Caja General histórica al final de este periodo (pEnd)
       final DateTime cutoffDate = DateTime(2026, 7, 1);
       double recSubs = 0;
-      for (var p in payments) {
-        if (!p.paymentDate.isBefore(cutoffDate) && (p.paymentDate.isBefore(pEnd) || p.paymentDate.isAtSameMomentAs(pEnd))) {
-          recSubs += p.amountReceived;
+      for (var pay in payments) {
+        if (!pay.paymentDate.isBefore(cutoffDate) && (pay.paymentDate.isBefore(pEnd) || pay.paymentDate.isAtSameMomentAs(pEnd))) {
+          recSubs += pay.amountReceived;
         }
       }
       double invSubs = 0;
@@ -292,9 +253,9 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
         }
       }
       double credSubs = 0;
-      for (var c in credits) {
-        if (!c.disbursementDate.isBefore(cutoffDate) && (c.disbursementDate.isBefore(pEnd) || c.disbursementDate.isAtSameMomentAs(pEnd))) {
-          credSubs += c.principalAmount;
+      for (var cred in credits) {
+        if (!cred.disbursementDate.isBefore(cutoffDate) && (cred.disbursementDate.isBefore(pEnd) || cred.disbursementDate.isAtSameMomentAs(pEnd))) {
+          credSubs += cred.principalAmount;
         }
       }
       double expSubs = 0;
@@ -327,11 +288,9 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
     }
     if (maxY == 0) maxY = 100;
 
-    final latestPeriod = contiguousPeriods.last;
-    final latestData = dataByPeriod[latestPeriod] ?? _HistoricalPeriodData();
-    final currentCaja = latestData.capitalCaja;
-    final currentCartera = latestData.capitalCartera;
-    final currentTotal = latestData.capitalTotal;
+    final currentCaja = centralMetrics.cajaActual;
+    final currentCartera = centralMetrics.carteraActivaCapital;
+    final currentTotal = currentCaja + currentCartera;
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;

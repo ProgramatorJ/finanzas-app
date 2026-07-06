@@ -106,119 +106,23 @@ class _BalanceSheetReportScreenState extends ConsumerState<BalanceSheetReportScr
     final DateTime effectiveStart = filterStart.isBefore(cutoffDate) ? cutoffDate : filterStart;
 
     // ─── CÁLCULO DE ACTIVOS HISTÓRICOS (Respetando cutoff) ───
-    // 1. Liquidez (Caja)
-    double recSubs = 0;
-    for (var p in payments) {
-      if (!p.paymentDate.isBefore(cutoffDate)) {
-        if (!hasFilter || p.paymentDate.isBefore(filterEnd) || p.paymentDate.isAtSameMomentAs(filterEnd)) {
-          recSubs += p.amountReceived;
-        }
-      }
-    }
-    double invSubs = 0;
-    for (var inv in investments) {
-      if (!inv.createdAt.isBefore(cutoffDate)) {
-        if (!hasFilter || inv.createdAt.isBefore(filterEnd) || inv.createdAt.isAtSameMomentAs(filterEnd)) {
-          invSubs += inv.amount;
-        }
-      }
-    }
-    double credSubs = 0;
-    for (var c in credits) {
-      if (!c.disbursementDate.isBefore(cutoffDate)) {
-        if (!hasFilter || c.disbursementDate.isBefore(filterEnd) || c.disbursementDate.isAtSameMomentAs(filterEnd)) {
-          credSubs += c.principalAmount;
-        }
-      }
-    }
-    double expSubs = 0;
-    for (var e in expenses) {
-      if (!e.date.isBefore(cutoffDate)) {
-        if (!hasFilter || e.date.isBefore(filterEnd) || e.date.isAtSameMomentAs(filterEnd)) {
-          expSubs += e.amount;
-        }
-      }
-    }
-    double ipSubs = 0;
-    for (var ip in investorPayments) {
-      if (!ip.paymentDate.isBefore(cutoffDate)) {
-        if (!hasFilter || ip.paymentDate.isBefore(filterEnd) || ip.paymentDate.isAtSameMomentAs(filterEnd)) {
-          ipSubs += ip.amount;
-        }
-      }
-    }
-    double adjSubs = 0;
-    for (var adj in adjustments) {
-      if (!adj.date.isBefore(cutoffDate)) {
-        if (!hasFilter || adj.date.isBefore(filterEnd) || adj.date.isAtSameMomentAs(filterEnd)) {
-          adjSubs += adj.amount;
-        }
-      }
-    }
-    final double liquidezCaja = recSubs + invSubs - credSubs - expSubs - ipSubs + adjSubs;
+    final metrics = FinancialMetrics.calculate(
+      credits: credits,
+      payments: payments,
+      expenses: expenses,
+      investments: investments,
+      investorPayments: investorPayments,
+      adjustments: adjustments,
+      dateLimit: hasFilter ? filterEnd : null,
+    );
 
-    // 2. Cartera Activa, Intereses, Mora (Respetando cutoff)
-    double carteraActiva = 0;
-    double interesPorCobrar = 0;
-    double moraAcumulada = 0;
-
-    for (var c in credits) {
-      if (hasFilter && c.disbursementDate.isAfter(filterEnd)) {
-        continue;
-      }
-
-      double capitalPaidUpToCutoff = 0;
-      double interestPaidUpToCutoff = 0;
-      double moraPaidUpToCutoff = 0;
-      double totalMoraPaidAllTime = 0;
-
-      for (var p in payments) {
-        if (p.creditId == c.creditId) {
-          totalMoraPaidAllTime += p.appliedToMora;
-          if (!hasFilter || p.paymentDate.isBefore(filterEnd) || p.paymentDate.isAtSameMomentAs(filterEnd)) {
-            capitalPaidUpToCutoff += p.appliedToPrincipal;
-            interestPaidUpToCutoff += p.appliedToInterest;
-            moraPaidUpToCutoff += p.appliedToMora;
-          }
-        }
-      }
-
-      // Si a la fecha de corte el capital no se había devuelto por completo (crédito no finalizado)
-      if (capitalPaidUpToCutoff < c.principalAmount) {
-        carteraActiva += (c.principalAmount - capitalPaidUpToCutoff).clamp(0.0, double.infinity);
-        interesPorCobrar += (c.totalInterest - interestPaidUpToCutoff).clamp(0.0, double.infinity);
-        
-        double moraRem = (c.accumulatedMora - totalMoraPaidAllTime + moraPaidUpToCutoff).clamp(0.0, double.infinity);
-        moraAcumulada += moraRem;
-      }
-    }
-
+    final double liquidezCaja = metrics.cajaActual;
+    final double carteraActiva = metrics.carteraActivaCapital;
+    final double interesPorCobrar = metrics.interesesPorCobrar;
+    final double moraAcumulada = metrics.moraAcumulada;
     final double totalActivos = liquidezCaja + carteraActiva + interesPorCobrar + moraAcumulada;
-
-    // ─── CÁLCULO DE PASIVOS HISTÓRICOS (Respetando cutoff) ───
-    double deudaInversores = 0;
-    for (var inv in investments) {
-      if (hasFilter && inv.createdAt.isAfter(filterEnd)) {
-        continue;
-      }
-      double returnedUpToCutoff = 0;
-      for (var ip in investorPayments) {
-        if (ip.investmentId == inv.investmentId && ip.concept == InvestorPaymentConcept.principalReturn) {
-          if (!hasFilter || ip.paymentDate.isBefore(filterEnd) || ip.paymentDate.isAtSameMomentAs(filterEnd)) {
-            returnedUpToCutoff += ip.amount;
-          }
-        }
-      }
-
-      double outstanding = inv.amount - returnedUpToCutoff;
-      if (outstanding > 0) {
-        deudaInversores += outstanding;
-      }
-    }
-    final double totalPasivos = deudaInversores;
-
-    // ─── CÁLCULO DE PATRIMONIO NETO ───
-    final double patrimonioNeto = totalActivos - totalPasivos;
+    final double totalPasivos = metrics.deudaInversores;
+    final double patrimonioNeto = metrics.patrimonioNeto;
 
     // ─── CÁLCULO DE ROE (Filtrados en el rango efectivo >= cutoffDate) ───
     double interestsEarnedInPeriod = 0;
