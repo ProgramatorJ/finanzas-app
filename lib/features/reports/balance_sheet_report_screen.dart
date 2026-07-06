@@ -300,7 +300,7 @@ class _BalanceSheetReportScreenState extends ConsumerState<BalanceSheetReportScr
                                       title: totalActivos > 0 && liquidezCaja > 0
                                           ? '${(liquidezCaja / totalActivos * 100).toStringAsFixed(0)}%'
                                           : '',
-                                      color: Colors.teal,
+                                      color: const Color(0xFF7E9CD8),
                                       radius: 40,
                                       titleStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                                     ),
@@ -309,7 +309,7 @@ class _BalanceSheetReportScreenState extends ConsumerState<BalanceSheetReportScr
                                       title: totalActivos > 0 && carteraActiva > 0
                                           ? '${(carteraActiva / totalActivos * 100).toStringAsFixed(0)}%'
                                           : '',
-                                      color: AppTheme.primaryColor,
+                                      color: const Color(0xFF3D8BFF),
                                       radius: 40,
                                       titleStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                                     ),
@@ -318,7 +318,7 @@ class _BalanceSheetReportScreenState extends ConsumerState<BalanceSheetReportScr
                                       title: totalActivos > 0 && interesPorCobrar > 0
                                           ? '${(interesPorCobrar / totalActivos * 100).toStringAsFixed(0)}%'
                                           : '',
-                                      color: Colors.blueAccent,
+                                      color: const Color(0xFF00E5FF),
                                       radius: 40,
                                       titleStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                                     ),
@@ -327,7 +327,7 @@ class _BalanceSheetReportScreenState extends ConsumerState<BalanceSheetReportScr
                                       title: totalActivos > 0 && moraAcumulada > 0
                                           ? '${(moraAcumulada / totalActivos * 100).toStringAsFixed(0)}%'
                                           : '',
-                                      color: Colors.amber,
+                                      color: const Color(0xFF00FFCC),
                                       radius: 40,
                                       titleStyle: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 11),
                                     ),
@@ -340,13 +340,13 @@ class _BalanceSheetReportScreenState extends ConsumerState<BalanceSheetReportScr
                               mainAxisAlignment: MainAxisAlignment.center,
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                _buildPieLegend(Colors.teal, 'Caja (Liquidez)', copFormatter.format(liquidezCaja)),
+                                _buildPieLegend(const Color(0xFF7E9CD8), 'Caja (Liquidez)', copFormatter.format(liquidezCaja)),
                                 const SizedBox(height: 8),
-                                _buildPieLegend(AppTheme.primaryColor, 'Cartera Activa', copFormatter.format(carteraActiva)),
+                                _buildPieLegend(const Color(0xFF3D8BFF), 'Cartera Activa', copFormatter.format(carteraActiva)),
                                 const SizedBox(height: 8),
-                                _buildPieLegend(Colors.blueAccent, 'Intereses x Cobrar', copFormatter.format(interesPorCobrar)),
+                                _buildPieLegend(const Color(0xFF00E5FF), 'Intereses x Cobrar', copFormatter.format(interesPorCobrar)),
                                 const SizedBox(height: 8),
-                                _buildPieLegend(Colors.amber, 'Mora Pendiente', copFormatter.format(moraAcumulada)),
+                                _buildPieLegend(const Color(0xFF00FFCC), 'Mora Pendiente', copFormatter.format(moraAcumulada)),
                               ],
                             ),
                           ],

@@ -369,9 +369,9 @@ class _ProfitReportScreenState extends ConsumerState<ProfitReportScreen> {
             child: Wrap(
               spacing: 24,
               children: [
-                _buildLegendDot(const Color(0xFF00C9A7), 'Utilidad Bruta'),
-                _buildLegendDot(const Color(0xFF4A84E6), 'Utilidad Neta'),
-                _buildLegendDot(AppTheme.errorColor.withValues(alpha: 0.6), 'Gastos + Int. Inversores'),
+                _buildLegendDot(const Color(0xFF00FFCC), 'Utilidad Bruta'),
+                _buildLegendDot(const Color(0xFF3D8BFF), 'Utilidad Neta'),
+                _buildLegendDot(const Color(0xFFFF416C), 'Gastos + Int. Inversores'),
               ],
             ),
           ),
@@ -402,7 +402,7 @@ class _ProfitReportScreenState extends ConsumerState<ProfitReportScreen> {
                     getTooltipColor: (group) => isDark ? Colors.grey.shade800 : Colors.grey.shade200,
                     getTooltipItem: (group, groupIndex, rod, rodIndex) {
                       final labels = ['U. Bruta', 'U. Neta', 'Egresos'];
-                      final colors = [const Color(0xFF00C9A7), const Color(0xFF4A84E6), AppTheme.errorColor];
+                      final colors = [const Color(0xFF00FFCC), const Color(0xFF3D8BFF), const Color(0xFFFF416C)];
                       return BarTooltipItem(
                         '${labels[rodIndex]}\n${copFormatter.format(rod.toY)}',
                         TextStyle(color: colors[rodIndex], fontWeight: FontWeight.bold, fontSize: 12),
@@ -464,7 +464,7 @@ class _ProfitReportScreenState extends ConsumerState<ProfitReportScreen> {
                         width: 16,
                         borderRadius: BorderRadius.circular(4),
                         gradient: const LinearGradient(
-                          colors: [Color(0xFF00C9A7), Color(0xFF00E5BF)],
+                          colors: [Color(0xFF00FFCC), Color(0xFF00FF99)],
                           begin: Alignment.bottomCenter,
                           end: Alignment.topCenter,
                         ),
@@ -475,8 +475,8 @@ class _ProfitReportScreenState extends ConsumerState<ProfitReportScreen> {
                         borderRadius: BorderRadius.circular(4),
                         gradient: LinearGradient(
                           colors: neta >= 0
-                              ? [const Color(0xFF4A84E6), const Color(0xFF6BA0FF)]
-                              : [AppTheme.errorColor, AppTheme.errorColor.withValues(alpha: 0.7)],
+                              ? [const Color(0xFF3D8BFF), const Color(0xFF00E5FF)]
+                              : [const Color(0xFFFF416C), const Color(0xFFFF4B2B)],
                           begin: Alignment.bottomCenter,
                           end: Alignment.topCenter,
                         ),
@@ -485,8 +485,8 @@ class _ProfitReportScreenState extends ConsumerState<ProfitReportScreen> {
                         toY: egresos,
                         width: 16,
                         borderRadius: BorderRadius.circular(4),
-                        gradient: LinearGradient(
-                          colors: [AppTheme.errorColor.withValues(alpha: 0.8), AppTheme.errorColor.withValues(alpha: 0.4)],
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFFFF416C), Color(0xFFFF4B2B)],
                           begin: Alignment.bottomCenter,
                           end: Alignment.topCenter,
                         ),

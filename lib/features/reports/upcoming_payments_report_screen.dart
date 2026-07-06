@@ -917,11 +917,11 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              _buildLegendItem(AppTheme.primaryColor, 'Valor Pagado'),
+              _buildLegendItem(const Color(0xFF3D8BFF), 'Valor Pagado'),
               const SizedBox(width: 16),
               _buildLegendItem(isDark ? Colors.white24 : Colors.black12, 'Valor Meta', isOutline: true),
               const SizedBox(width: 24),
-              _buildLegendItem(AppTheme.errorColor, 'Int+Mora Pagado'),
+              _buildLegendItem(const Color(0xFF00FFCC), 'Int+Mora Pagado'),
               const SizedBox(width: 16),
               _buildLegendItem(isDark ? Colors.white24 : Colors.black12, 'Int+Mora Meta', isOutline: true),
             ],
@@ -945,7 +945,7 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
                           final meta = rod.backDrawRodData.toY;
                           return BarTooltipItem(
                             '${_formatPeriodLabel(contiguousPeriods[groupIndex], resolution)}\n$label\nPagado: ${copFormatter.format(rod.toY)}\nMeta: ${copFormatter.format(meta)}',
-                            TextStyle(color: isValor ? AppTheme.primaryColor : AppTheme.errorColor, fontWeight: FontWeight.bold, fontSize: 12),
+                            TextStyle(color: isValor ? const Color(0xFF3D8BFF) : const Color(0xFF00FFCC), fontWeight: FontWeight.bold, fontSize: 12),
                           );
                         },
                       ),
@@ -998,7 +998,7 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
                           BarChartRodData(
                             toY: md.paidValue,
                             gradient: const LinearGradient(
-                              colors: [Color(0xFF4A84E6), Color(0xFF6BA0FF)],
+                              colors: [Color(0xFF3D8BFF), Color(0xFF00E5FF)],
                               begin: Alignment.bottomCenter,
                               end: Alignment.topCenter,
                             ),
@@ -1012,8 +1012,8 @@ class _UpcomingPaymentsReportScreenState extends ConsumerState<UpcomingPaymentsR
                           ),
                           BarChartRodData(
                             toY: md.paidInterestMora,
-                            gradient: LinearGradient(
-                              colors: [AppTheme.errorColor, AppTheme.errorColor.withValues(alpha: 0.7)],
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF00FFCC), Color(0xFF00FF99)],
                               begin: Alignment.bottomCenter,
                               end: Alignment.topCenter,
                             ),

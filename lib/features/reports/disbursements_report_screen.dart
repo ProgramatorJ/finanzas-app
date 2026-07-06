@@ -424,15 +424,15 @@ class _DisbursementsReportScreenState extends ConsumerState<DisbursementsReportS
                         // Stacked for Saldo Total
                         double acc = 0;
                         if (md.pendingPrincipal > 0) {
-                          stackItems.add(BarChartRodStackItem(acc, acc + md.pendingPrincipal, AppTheme.primaryColor));
+                          stackItems.add(BarChartRodStackItem(acc, acc + md.pendingPrincipal, const Color(0xFF3D8BFF)));
                           acc += md.pendingPrincipal;
                         }
                         if (md.pendingInterest > 0) {
-                          stackItems.add(BarChartRodStackItem(acc, acc + md.pendingInterest, Colors.amber));
+                          stackItems.add(BarChartRodStackItem(acc, acc + md.pendingInterest, const Color(0xFF00E5FF)));
                           acc += md.pendingInterest;
                         }
                         if (md.pendingMora > 0) {
-                          stackItems.add(BarChartRodStackItem(acc, acc + md.pendingMora, AppTheme.errorColor));
+                          stackItems.add(BarChartRodStackItem(acc, acc + md.pendingMora, const Color(0xFF00FFCC)));
                           acc += md.pendingMora;
                         }
                       }
@@ -445,7 +445,7 @@ class _DisbursementsReportScreenState extends ConsumerState<DisbursementsReportS
                             color: _selectedMetric == DisbursementMetric.saldoTotal ? Colors.transparent : null,
                             gradient: _selectedMetric != DisbursementMetric.saldoTotal
                                 ? const LinearGradient(
-                                    colors: [Color(0xFF4A84E6), Color(0xFF6BA0FF)],
+                                    colors: [Color(0xFF3D8BFF), Color(0xFF00E5FF)],
                                     begin: Alignment.bottomCenter,
                                     end: Alignment.topCenter,
                                   )
@@ -472,11 +472,11 @@ class _DisbursementsReportScreenState extends ConsumerState<DisbursementsReportS
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      _buildLegendItem(AppTheme.primaryColor, 'Capital'),
+                      _buildLegendItem(const Color(0xFF3D8BFF), 'Capital'),
                       const SizedBox(width: 16),
-                      _buildLegendItem(Colors.amber, 'Interés'),
+                      _buildLegendItem(const Color(0xFF00E5FF), 'Interés'),
                       const SizedBox(width: 16),
-                      _buildLegendItem(AppTheme.errorColor, 'Mora'),
+                      _buildLegendItem(const Color(0xFF00FFCC), 'Mora'),
                     ],
                   ),
                 ),
