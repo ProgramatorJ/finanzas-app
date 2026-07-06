@@ -11,6 +11,7 @@ import '../models/expense_model.dart';
 import '../models/treasury_model.dart';
 import '../models/investment_model.dart';
 import '../models/investor_payment_model.dart';
+import '../models/cash_adjustment_model.dart';
 import '../constants/app_constants.dart';
 import '../utils/mora_engine.dart';
 import '../utils/commercial_calendar.dart';
@@ -553,6 +554,46 @@ class FirestoreService {
     return docRef.id;
   }
 
+  /// Actualiza un gasto existente y ajusta la tesorería de forma atómica.
+  Future<void> updateExpense(ExpenseModel oldExp, ExpenseModel newExp) async {
+    final batch = _db.batch();
+    final double diff = newExp.amount - oldExp.amount;
+
+    batch.set(_db.collection('expenses').doc(oldExp.expenseId), newExp.toMap());
+
+    if (diff != 0) {
+      batch.set(
+        _db.collection('treasury').doc('main'),
+        {
+          'currentBalance': FieldValue.increment(-diff),
+          'totalExpenses': FieldValue.increment(diff),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
+  }
+
+  /// Elimina un gasto existente y revierte los cambios en la tesorería de forma atómica.
+  Future<void> deleteExpense(String expenseId, double amount) async {
+    final batch = _db.batch();
+    batch.delete(_db.collection('expenses').doc(expenseId));
+
+    batch.set(
+      _db.collection('treasury').doc('main'),
+      {
+        'currentBalance': FieldValue.increment(amount),
+        'totalExpenses': FieldValue.increment(-amount),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await batch.commit();
+  }
+
   /// Stream del documento principal de tesorería
   Stream<TreasuryModel> getTreasuryStream() {
     return _db
@@ -613,6 +654,80 @@ class FirestoreService {
 
     await batch.commit();
     return docRef.id;
+  }
+
+  /// Actualiza una inversión existente y ajusta la tesorería si el monto cambia.
+  Future<void> updateInvestment(InvestmentModel oldInv, InvestmentModel newInv) async {
+    final batch = _db.batch();
+    final double diff = newInv.amount - oldInv.amount;
+
+    batch.set(_db.collection('investments').doc(oldInv.investmentId), newInv.toMap());
+
+    if (diff != 0) {
+      batch.set(
+        _db.collection('treasury').doc('main'),
+        {
+          'currentBalance': FieldValue.increment(diff),
+          'totalInvestmentsReceived': FieldValue.increment(diff),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
+  }
+
+  /// Elimina una inversión y todos sus pagos asociados, revirtiendo el impacto en tesorería de forma atómica.
+  Future<void> deleteInvestment(String investmentId, double amount) async {
+    final batch = _db.batch();
+
+    // 1. Eliminar documento principal de la inversión
+    batch.delete(_db.collection('investments').doc(investmentId));
+
+    // 2. Ajustar el saldo de tesorería restando el capital principal de la inversión
+    batch.set(
+      _db.collection('treasury').doc('main'),
+      {
+        'currentBalance': FieldValue.increment(-amount),
+        'totalInvestmentsReceived': FieldValue.increment(-amount),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    // 3. Obtener y eliminar pagos de inversores (devolución y/o intereses) asociados
+    final paymentsSnap = await _db.collection('investments').doc(investmentId).collection('investor_payments').get();
+    for (var doc in paymentsSnap.docs) {
+      batch.delete(doc.reference);
+      final data = doc.data();
+      final concept = data['concept'];
+      final payAmount = (data['amount'] as num?)?.toDouble() ?? 0.0;
+      if (concept == 'interestPayment') {
+        batch.set(
+          _db.collection('treasury').doc('main'),
+          {
+            'currentBalance': FieldValue.increment(payAmount),
+            'totalInterestPaidToInvestors': FieldValue.increment(-payAmount),
+            'lastUpdated': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      } else {
+        // principalReturn
+        batch.set(
+          _db.collection('treasury').doc('main'),
+          {
+            'currentBalance': FieldValue.increment(payAmount),
+            'totalReturnedToInvestors': FieldValue.increment(-payAmount),
+            'lastUpdated': FieldValue.serverTimestamp(),
+          },
+          SetOptions(merge: true),
+        );
+      }
+    }
+
+    await batch.commit();
   }
 
   /// Registra un pago a un inversor (interés o devolución de capital) y actualiza todo atómicamente.
@@ -1117,6 +1232,65 @@ class FirestoreService {
           list.sort((a, b) => a.scheduledTime.compareTo(b.scheduledTime));
           return list;
         });
+  }
+
+  // ─── AJUSTES MANUALES DE CAJA ────────────────────────────────────────────
+
+  /// Registra un ajuste manual de caja y actualiza el saldo atómicamente.
+  Future<String> registerCashAdjustment(CashAdjustmentModel adjustment) async {
+    final docRef = _db.collection('cash_adjustments').doc();
+    final newAdj = CashAdjustmentModel(
+      adjustmentId: docRef.id,
+      amount: adjustment.amount,
+      description: adjustment.description,
+      date: adjustment.date,
+      createdBy: adjustment.createdBy,
+      createdAt: DateTime.now(),
+    );
+
+    final batch = _db.batch();
+    batch.set(docRef, newAdj.toMap());
+
+    batch.set(
+      _db.collection('treasury').doc('main'),
+      {
+        'currentBalance': FieldValue.increment(adjustment.amount),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await batch.commit();
+    return docRef.id;
+  }
+
+  /// Stream de todos los ajustes manuales de caja, ordenados por fecha descendente.
+  Stream<List<CashAdjustmentModel>> getCashAdjustmentsStream() {
+    return _db
+        .collection('cash_adjustments')
+        .orderBy('date', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => CashAdjustmentModel.fromMap(doc.data(), doc.id))
+            .toList());
+  }
+
+  /// Elimina un ajuste manual de caja y revierte el saldo atómicamente.
+  Future<void> deleteCashAdjustment(String adjustmentId, double amount) async {
+    final docRef = _db.collection('cash_adjustments').doc(adjustmentId);
+    final batch = _db.batch();
+    batch.delete(docRef);
+
+    batch.set(
+      _db.collection('treasury').doc('main'),
+      {
+        'currentBalance': FieldValue.increment(-amount),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await batch.commit();
   }
 }
 

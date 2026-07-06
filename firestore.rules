@@ -108,5 +108,10 @@ service cloud.firestore {
     match /{path=**}/investor_payments/{paymentId} {
       allow read, write: if isAdmin();
     }
+
+    // ── /cash_adjustments ─────────────────────────────────────────────
+    match /cash_adjustments/{adjustmentId} {
+      allow read, write: if isAdmin();
+    }
   }
 }

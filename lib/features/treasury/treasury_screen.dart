@@ -7,6 +7,7 @@ import '../../core/models/expense_model.dart';
 import '../../core/models/treasury_model.dart';
 import '../../core/models/investment_model.dart';
 import '../../core/models/investor_payment_model.dart';
+import '../../core/models/cash_adjustment_model.dart';
 import '../../core/services/firestore_service.dart';
 import '../../core/services/auth_service.dart';
 import '../../shared/theme/app_theme.dart';
@@ -17,63 +18,12 @@ import '../../core/services/rbac_service.dart';
 import 'dart:async';
 import '../calendar/calendar_providers.dart'; // Para allPaymentsProvider y allCreditsStreamProvider
 import '../credits/credit_list_screen.dart'; // Para allCreditsStreamProvider
+import '../shared/financial_providers.dart'; // Providers financieros compartidos
 
-final treasuryStreamProvider = StreamProvider<TreasuryModel>((ref) {
-  return ref.watch(firestoreServiceProvider).getTreasuryStream();
-});
-
-final expensesStreamProvider = StreamProvider<List<ExpenseModel>>((ref) {
-  return ref.watch(firestoreServiceProvider).getExpensesStream();
-});
-
-final investmentsStreamProvider = StreamProvider<List<InvestmentModel>>((ref) {
-  return ref.watch(firestoreServiceProvider).getInvestmentsStream();
-});
-
-final allInvestorPaymentsStreamProvider = StreamProvider<List<InvestorPaymentModel>>((ref) {
-  final investmentsAsync = ref.watch(investmentsStreamProvider);
-  return investmentsAsync.maybeWhen(
-    data: (investments) {
-      if (investments.isEmpty) {
-        return Stream.value(<InvestorPaymentModel>[]);
-      }
-
-      final controller = StreamController<List<InvestorPaymentModel>>();
-      final Map<String, List<InvestorPaymentModel>> paymentsByInvestment = {};
-      final List<StreamSubscription> subscriptions = [];
-
-      void emitMerged() {
-        final allPayments = paymentsByInvestment.values.expand((x) => x).toList();
-        allPayments.sort((a, b) => b.paymentDate.compareTo(a.paymentDate));
-        if (!controller.isClosed) {
-          controller.add(allPayments);
-        }
-      }
-
-      for (var inv in investments) {
-        final sub = ref.read(firestoreServiceProvider)
-            .getInvestorPaymentsStream(inv.investmentId)
-            .listen((payments) {
-          paymentsByInvestment[inv.investmentId] = payments;
-          emitMerged();
-        }, onError: (e) {
-          debugPrint('Error loading payments for ${inv.investmentId}: $e');
-        });
-        subscriptions.add(sub);
-      }
-
-      ref.onDispose(() {
-        for (var sub in subscriptions) {
-          sub.cancel();
-        }
-        controller.close();
-      });
-
-      return controller.stream;
-    },
-    orElse: () => Stream.value(<InvestorPaymentModel>[]),
-  );
-});
+// Los providers financieros (treasuryStreamProvider, expensesStreamProvider,
+// investmentsStreamProvider, allInvestorPaymentsStreamProvider, cashAdjustmentsStreamProvider)
+// ahora están centralizados en '../shared/financial_providers.dart'
+// para ser compartidos entre Tesorería e Informes sin duplicación.
 
 class TreasuryScreen extends ConsumerStatefulWidget {
   const TreasuryScreen({super.key});
@@ -116,6 +66,14 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
   InvestorPaymentConcept _paymentConcept = InvestorPaymentConcept.interestPayment;
   bool _isSavingInvestorPayment = false;
   DateTime _investorPaymentDate = DateTime.now();
+
+  // Formulario de Ajuste de Caja
+  final _adjustFormKey = GlobalKey<FormState>();
+  final _adjustAmountController = TextEditingController();
+  final _adjustDescController = TextEditingController();
+  bool _isAdjustmentPositive = true; // true = entrada, false = salida
+  bool _isSavingAdjustment = false;
+  DateTime _adjustmentDate = DateTime.now();
 
   // Filtro de periodos en la Caja General
   String _selectedCajaPeriod = 'Historico'; // 'Historico', 'Este Mes', 'Mes Pasado', 'Personalizado'
@@ -160,6 +118,8 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
     _investNotesController.dispose();
     _payInvestorAmountController.dispose();
     _payInvestorNotesController.dispose();
+    _adjustAmountController.dispose();
+    _adjustDescController.dispose();
     super.dispose();
   }
 
@@ -173,7 +133,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
         expenseId: '',
         amount: double.parse(_expenseAmountController.text.replaceAll(',', '')),
         category: _selectedCategory,
-        description: _expenseDescController.text,
+        description: _expenseDescController.text.trim(),
         date: _expenseDate,
         createdBy: user?.displayName ?? 'Admin',
       );
@@ -191,11 +151,126 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
     }
   }
 
-  void _showAddExpenseDialog() {
-    _expenseAmountController.clear();
-    _expenseDescController.clear();
-    _selectedCategory = 'Otros';
-    _expenseDate = DateTime.now();
+  Future<void> _updateExpense(ExpenseModel oldExp) async {
+    if (!_expenseFormKey.currentState!.validate()) return;
+    setState(() => _isSavingExpense = true);
+    try {
+      final updatedExp = ExpenseModel(
+        expenseId: oldExp.expenseId,
+        amount: double.parse(_expenseAmountController.text.replaceAll(',', '')),
+        category: _selectedCategory,
+        description: _expenseDescController.text.trim(),
+        date: _expenseDate,
+        createdBy: oldExp.createdBy,
+      );
+
+      await ref.read(firestoreServiceProvider).updateExpense(oldExp, updatedExp);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gasto actualizado exitosamente')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.errorColor));
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingExpense = false);
+    }
+  }
+
+  Future<void> _confirmDeleteExpense(ExpenseModel exp) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Gasto'),
+        content: Text('¿Está seguro de que desea eliminar el gasto de "${exp.description}" por valor de ${copFormatter.format(exp.amount)}?\n\nEl saldo de caja se actualizará automáticamente.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await ref.read(firestoreServiceProvider).deleteExpense(exp.expenseId, exp.amount);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Gasto eliminado correctamente')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error al eliminar: $e'), backgroundColor: AppTheme.errorColor),
+          );
+        }
+      }
+    }
+  }
+
+  void _showExpenseDetail(ExpenseModel exp) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return GlassmorphicContainer(
+          child: AlertDialog(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            title: const Text('Detalle de Gasto'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _detailRow('Descripción', exp.description),
+                  _detailRow('Monto', copFormatter.format(exp.amount)),
+                  _detailRow('Categoría', exp.category),
+                  _detailRow('Fecha', DateFormat('dd/MM/yyyy').format(exp.date)),
+                  _detailRow('Registrado por', exp.createdBy),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _confirmDeleteExpense(exp);
+                },
+                style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                child: const Text('Eliminar'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _showAddExpenseDialog(editExp: exp);
+                },
+                child: const Text('Editar'),
+              ),
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar')),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showAddExpenseDialog({ExpenseModel? editExp}) {
+    if (editExp != null) {
+      _expenseAmountController.text = editExp.amount.toStringAsFixed(0);
+      _expenseDescController.text = editExp.description;
+      _selectedCategory = editExp.category;
+      _expenseDate = editExp.date;
+    } else {
+      _expenseAmountController.clear();
+      _expenseDescController.clear();
+      _selectedCategory = 'Otros';
+      _expenseDate = DateTime.now();
+    }
 
     showDialog(
       context: context,
@@ -205,7 +280,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
             child: AlertDialog(
               backgroundColor: Colors.transparent,
               elevation: 0,
-              title: const Text('Registrar Gasto Operativo'),
+              title: Text(editExp != null ? 'Editar Gasto Operativo' : 'Registrar Gasto Operativo'),
               content: Form(
                 key: _expenseFormKey,
                 child: SingleChildScrollView(
@@ -261,12 +336,16 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
                 ElevatedButton(
                   onPressed: _isSavingExpense ? null : () async {
                     setDialogState(() => _isSavingExpense = true);
-                    await _registerExpense();
+                    if (editExp != null) {
+                      await _updateExpense(editExp);
+                    } else {
+                      await _registerExpense();
+                    }
                     setDialogState(() => _isSavingExpense = false);
                   },
                   child: _isSavingExpense
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Guardar Gasto'),
+                      : Text(editExp != null ? 'Guardar Cambios' : 'Guardar Gasto'),
                 ),
               ],
             ),
@@ -308,12 +387,94 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
     }
   }
 
-  void _showAddInvestmentDialog() {
-    _investorNameController.clear();
-    _investAmountController.clear();
-    _investRateController.clear();
-    _investNotesController.clear();
-    _investmentDate = DateTime.now();
+  Future<void> _updateInvestment(InvestmentModel oldInv) async {
+    if (!_investFormKey.currentState!.validate()) return;
+    setState(() => _isSavingInvestment = true);
+    try {
+      final double newAmount = double.parse(_investAmountController.text.replaceAll(',', ''));
+      final double newRate = double.tryParse(_investRateController.text.replaceAll(',', '')) ?? 0.0;
+      
+      final double diff = newAmount - oldInv.amount;
+      final double newOutstanding = (oldInv.outstandingBalance + diff).clamp(0.0, double.infinity);
+      final isNowCompleted = newOutstanding == 0 && oldInv.totalPrincipalReturned > 0;
+
+      final updatedInv = InvestmentModel(
+        investmentId: oldInv.investmentId,
+        investorName: _investorNameController.text.trim(),
+        amount: newAmount,
+        monthlyInterestRate: newRate,
+        totalInterestPaid: oldInv.totalInterestPaid,
+        totalPrincipalReturned: oldInv.totalPrincipalReturned,
+        outstandingBalance: newOutstanding,
+        status: isNowCompleted ? InvestmentStatus.completed : oldInv.status,
+        notes: _investNotesController.text.isEmpty ? null : _investNotesController.text.trim(),
+        createdAt: _investmentDate,
+        updatedAt: DateTime.now(),
+      );
+
+      await ref.read(firestoreServiceProvider).updateInvestment(oldInv, updatedInv);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Inversión actualizada exitosamente')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.errorColor));
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingInvestment = false);
+    }
+  }
+
+  Future<void> _confirmDeleteInvestment(InvestmentModel inv) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Inversión'),
+        content: Text('¿Está seguro de que desea eliminar la inversión de "${inv.investorName}" por valor de ${copFormatter.format(inv.amount)}?\n\n¡ADVERTENCIA! Se eliminarán de forma permanente todos sus pagos asociados y se revertirá el saldo de caja correspondiente.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await ref.read(firestoreServiceProvider).deleteInvestment(inv.investmentId, inv.amount);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Inversión eliminada correctamente')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error al eliminar: $e'), backgroundColor: AppTheme.errorColor),
+          );
+        }
+      }
+    }
+  }
+
+  void _showAddInvestmentDialog({InvestmentModel? editInv}) {
+    if (editInv != null) {
+      _investorNameController.text = editInv.investorName;
+      _investAmountController.text = editInv.amount.toStringAsFixed(0);
+      _investRateController.text = editInv.monthlyInterestRate.toString();
+      _investNotesController.text = editInv.notes ?? '';
+      _investmentDate = editInv.createdAt;
+    } else {
+      _investorNameController.clear();
+      _investAmountController.clear();
+      _investRateController.clear();
+      _investNotesController.clear();
+      _investmentDate = DateTime.now();
+    }
 
     showDialog(
       context: context,
@@ -323,7 +484,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
             child: AlertDialog(
               backgroundColor: Colors.transparent,
               elevation: 0,
-              title: const Text('Registrar Inversión'),
+              title: Text(editInv != null ? 'Editar Inversión' : 'Registrar Inversión'),
               content: Form(
                 key: _investFormKey,
                 child: SingleChildScrollView(
@@ -387,12 +548,16 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
                 ElevatedButton(
                   onPressed: _isSavingInvestment ? null : () async {
                     setDialogState(() => _isSavingInvestment = true);
-                    await _registerInvestment();
+                    if (editInv != null) {
+                      await _updateInvestment(editInv);
+                    } else {
+                      await _registerInvestment();
+                    }
                     setDialogState(() => _isSavingInvestment = false);
                   },
                   child: _isSavingInvestment
                       ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Registrar Inversión'),
+                      : Text(editInv != null ? 'Guardar Cambios' : 'Registrar Inversión'),
                 ),
               ],
             ),
@@ -401,7 +566,6 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
       },
     );
   }
-
   // ─── LÓGICA DE PAGO A INVERSOR ─────────────────────────────────────────
   Future<void> _registerInvestorPayment(String investmentId) async {
     if (!_payInvestorFormKey.currentState!.validate()) return;
@@ -588,6 +752,21 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
               },
             ),
             actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _confirmDeleteInvestment(inv);
+                },
+                style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+                child: const Text('Eliminar'),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(context);
+                  _showAddInvestmentDialog(editInv: inv);
+                },
+                child: const Text('Editar'),
+              ),
               TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cerrar')),
             ],
           ),
@@ -664,6 +843,197 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
     }
   }
 
+  // ─── AJUSTE MANUAL DE CAJA ──────────────────────────────────────────────
+  Future<void> _registerCashAdjustment() async {
+    if (!_adjustFormKey.currentState!.validate()) return;
+    setState(() => _isSavingAdjustment = true);
+    try {
+      final user = await ref.read(firestoreServiceProvider).getUser(ref.read(authServiceProvider).currentUser!.uid);
+      final rawAmount = double.parse(_adjustAmountController.text.replaceAll(',', ''));
+      final finalAmount = _isAdjustmentPositive ? rawAmount : -rawAmount;
+
+      final adjustment = CashAdjustmentModel(
+        adjustmentId: '',
+        amount: finalAmount,
+        description: _adjustDescController.text,
+        date: _adjustmentDate,
+        createdBy: user?.displayName ?? 'Admin',
+        createdAt: DateTime.now(),
+      );
+      await ref.read(firestoreServiceProvider).registerCashAdjustment(adjustment);
+      if (mounted) {
+        Navigator.pop(context);
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ajuste de caja registrado exitosamente')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.errorColor));
+      }
+    } finally {
+      if (mounted) setState(() => _isSavingAdjustment = false);
+    }
+  }
+
+  void _showCashAdjustmentDialog() {
+    _adjustAmountController.clear();
+    _adjustDescController.clear();
+    _isAdjustmentPositive = true;
+    _adjustmentDate = DateTime.now();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(builder: (context, setDialogState) {
+          return GlassmorphicContainer(
+            child: AlertDialog(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              title: const Text('Ajustar Saldo de Caja'),
+              content: Form(
+                key: _adjustFormKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Use esta opción para corregir el saldo real de caja cuando hay movimientos históricos que no fueron registrados.',
+                        style: TextStyle(color: Colors.grey.shade400, fontSize: 12),
+                      ),
+                      const SizedBox(height: 16),
+                      // Tipo de ajuste
+                      Row(
+                        children: [
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setDialogState(() => _isAdjustmentPositive = true),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: _isAdjustmentPositive ? Colors.green.withValues(alpha: 0.2) : Colors.transparent,
+                                  border: Border.all(color: _isAdjustmentPositive ? Colors.green : Colors.grey),
+                                  borderRadius: const BorderRadius.horizontal(left: Radius.circular(8)),
+                                ),
+                                child: Center(child: Text('+ Entrada', style: TextStyle(
+                                  color: _isAdjustmentPositive ? Colors.green : Colors.grey,
+                                  fontWeight: FontWeight.bold,
+                                ))),
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: GestureDetector(
+                              onTap: () => setDialogState(() => _isAdjustmentPositive = false),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                decoration: BoxDecoration(
+                                  color: !_isAdjustmentPositive ? Colors.red.withValues(alpha: 0.2) : Colors.transparent,
+                                  border: Border.all(color: !_isAdjustmentPositive ? Colors.red : Colors.grey),
+                                  borderRadius: const BorderRadius.horizontal(right: Radius.circular(8)),
+                                ),
+                                child: Center(child: Text('- Salida', style: TextStyle(
+                                  color: !_isAdjustmentPositive ? Colors.red : Colors.grey,
+                                  fontWeight: FontWeight.bold,
+                                ))),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _adjustAmountController,
+                        decoration: const InputDecoration(labelText: 'Monto (\$)'),
+                        keyboardType: TextInputType.number,
+                        validator: (val) {
+                          if (val == null || val.isEmpty) return 'Requerido';
+                          final parsed = double.tryParse(val.replaceAll(',', ''));
+                          if (parsed == null || parsed <= 0) return 'Monto inválido';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _adjustDescController,
+                        decoration: const InputDecoration(labelText: 'Descripción / Motivo'),
+                        validator: (val) => (val == null || val.isEmpty) ? 'Requerido' : null,
+                        maxLines: 2,
+                      ),
+                      const SizedBox(height: 16),
+                      InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: _adjustmentDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now().add(const Duration(days: 365)),
+                          );
+                          if (picked != null) setDialogState(() => _adjustmentDate = picked);
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(labelText: 'Fecha del Ajuste', suffixIcon: Icon(Icons.calendar_today)),
+                          child: Text(_dateFormat.format(_adjustmentDate)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+                ElevatedButton(
+                  onPressed: _isSavingAdjustment ? null : () async {
+                    setDialogState(() => _isSavingAdjustment = true);
+                    await _registerCashAdjustment();
+                    setDialogState(() => _isSavingAdjustment = false);
+                  },
+                  child: _isSavingAdjustment
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Registrar Ajuste'),
+                ),
+              ],
+            ),
+          );
+        });
+      },
+    );
+  }
+
+  Future<void> _confirmDeleteAdjustment(CashAdjustmentModel adj) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Eliminar Ajuste de Caja'),
+        content: Text('¿Está seguro de que desea eliminar el ajuste "${adj.description}" por valor de ${copFormatter.format(adj.amount)}? El saldo de caja se actualizará automáticamente.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Eliminar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      try {
+        await ref.read(firestoreServiceProvider).deleteCashAdjustment(adj.adjustmentId, adj.amount);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Ajuste de caja eliminado correctamente')),
+          );
+        }
+      } catch (e) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Error al eliminar: $e'), backgroundColor: AppTheme.errorColor),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final userAsync = ref.watch(currentUserModelProvider);
@@ -716,12 +1086,14 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
     final investmentsAsync = ref.watch(investmentsStreamProvider);
     final expensesAsync = ref.watch(expensesStreamProvider);
     final investorPaymentsAsync = ref.watch(allInvestorPaymentsStreamProvider);
+    final adjustmentsAsync = ref.watch(cashAdjustmentsStreamProvider);
 
     if (creditsAsync.isLoading ||
         paymentsAsync.isLoading ||
         investmentsAsync.isLoading ||
         expensesAsync.isLoading ||
-        investorPaymentsAsync.isLoading) {
+        investorPaymentsAsync.isLoading ||
+        adjustmentsAsync.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
@@ -729,7 +1101,8 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
         paymentsAsync.hasError ||
         investmentsAsync.hasError ||
         expensesAsync.hasError ||
-        investorPaymentsAsync.hasError) {
+        investorPaymentsAsync.hasError ||
+        adjustmentsAsync.hasError) {
       return const Center(child: Text('Error al cargar datos financieros.'));
     }
 
@@ -738,79 +1111,106 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
     final investments = investmentsAsync.value ?? [];
     final expenses = expensesAsync.value ?? [];
     final investorPayments = investorPaymentsAsync.value ?? [];
+    final adjustments = adjustmentsAsync.value ?? [];
 
+    final DateTime cutoffDate = DateTime(2026, 7, 1);
     final range = _resolveCajaDateRange();
     final hasFilter = range != null;
+    
+    // El rango efectivo debe respetar la fecha de corte (01/07/2026)
     final DateTime filterStart = range?.start ?? DateTime.fromMillisecondsSinceEpoch(0);
     final DateTime filterEnd = range?.end ?? DateTime.now().add(const Duration(days: 36500));
+    
+    final DateTime effectiveStart = filterStart.isBefore(cutoffDate) ? cutoffDate : filterStart;
 
-    // --- CÁLCULOS ACUMULADOS PARA EL SALDO EN CAJA (Hasta el fin del periodo 'filterEnd') ---
+    // --- CÁLCULOS ACUMULADOS PARA EL SALDO EN CAJA (Hasta el fin del periodo 'filterEnd', respetando cutoff) ---
     double recSubs = 0;
     for (var p in payments) {
-      if (!hasFilter || p.paymentDate.isBefore(filterEnd) || p.paymentDate.isAtSameMomentAs(filterEnd)) {
-        recSubs += p.amountReceived;
+      if (!p.paymentDate.isBefore(cutoffDate)) {
+        if (!hasFilter || p.paymentDate.isBefore(filterEnd) || p.paymentDate.isAtSameMomentAs(filterEnd)) {
+          recSubs += p.amountReceived;
+        }
       }
     }
 
     double invSubs = 0;
     for (var inv in investments) {
-      if (!hasFilter || inv.createdAt.isBefore(filterEnd) || inv.createdAt.isAtSameMomentAs(filterEnd)) {
-        invSubs += inv.amount;
+      if (!inv.createdAt.isBefore(cutoffDate)) {
+        if (!hasFilter || inv.createdAt.isBefore(filterEnd) || inv.createdAt.isAtSameMomentAs(filterEnd)) {
+          invSubs += inv.amount;
+        }
       }
     }
 
     double credSubs = 0;
     for (var c in credits) {
-      if (!hasFilter || c.disbursementDate.isBefore(filterEnd) || c.disbursementDate.isAtSameMomentAs(filterEnd)) {
-        credSubs += c.principalAmount;
+      if (!c.disbursementDate.isBefore(cutoffDate)) {
+        if (!hasFilter || c.disbursementDate.isBefore(filterEnd) || c.disbursementDate.isAtSameMomentAs(filterEnd)) {
+          credSubs += c.principalAmount;
+        }
       }
     }
 
     double expSubs = 0;
     for (var e in expenses) {
-      if (!hasFilter || e.date.isBefore(filterEnd) || e.date.isAtSameMomentAs(filterEnd)) {
-        expSubs += e.amount;
+      if (!e.date.isBefore(cutoffDate)) {
+        if (!hasFilter || e.date.isBefore(filterEnd) || e.date.isAtSameMomentAs(filterEnd)) {
+          expSubs += e.amount;
+        }
       }
     }
 
     double ipSubs = 0;
     for (var ip in investorPayments) {
-      if (!hasFilter || ip.paymentDate.isBefore(filterEnd) || ip.paymentDate.isAtSameMomentAs(filterEnd)) {
-        ipSubs += ip.amount;
+      if (!ip.paymentDate.isBefore(cutoffDate)) {
+        if (!hasFilter || ip.paymentDate.isBefore(filterEnd) || ip.paymentDate.isAtSameMomentAs(filterEnd)) {
+          ipSubs += ip.amount;
+        }
       }
     }
 
-    final double currentBalance = recSubs + invSubs - credSubs - expSubs - ipSubs;
+    // Incluir ajustes manuales de caja en el cálculo acumulado (respetando cutoff)
+    double adjSubs = 0;
+    for (var adj in adjustments) {
+      if (!adj.date.isBefore(cutoffDate)) {
+        if (!hasFilter || adj.date.isBefore(filterEnd) || adj.date.isAtSameMomentAs(filterEnd)) {
+          adjSubs += adj.amount;
+        }
+      }
+    }
 
-    // --- CÁLCULOS ESPECÍFICOS DEL PERIODO (Filtrados estrictamente en [start, end]) ---
+    final double currentBalance = recSubs + invSubs - credSubs - expSubs - ipSubs + adjSubs;
+
+    // --- CÁLCULOS ESPECÍFICOS DEL PERIODO (Filtrados estrictamente en [effectiveStart, filterEnd]) ---
     double interestsEarned = 0;
     double moraEarned = 0;
     double expensesPaid = 0;
     double investmentsReceived = 0;
     double returnedToInvestors = 0;
     double interestPaidToInvestors = 0;
+    double adjustmentsInPeriod = 0;
 
     for (var p in payments) {
-      if (!hasFilter || (p.paymentDate.isAfter(filterStart.subtract(const Duration(microseconds: 1))) && p.paymentDate.isBefore(filterEnd.add(const Duration(microseconds: 1))))) {
+      if (p.paymentDate.isAfter(effectiveStart.subtract(const Duration(microseconds: 1))) && p.paymentDate.isBefore(filterEnd.add(const Duration(microseconds: 1)))) {
         interestsEarned += p.appliedToInterest;
         moraEarned += p.appliedToMora;
       }
     }
 
     for (var e in expenses) {
-      if (!hasFilter || (e.date.isAfter(filterStart.subtract(const Duration(microseconds: 1))) && e.date.isBefore(filterEnd.add(const Duration(microseconds: 1))))) {
+      if (e.date.isAfter(effectiveStart.subtract(const Duration(microseconds: 1))) && e.date.isBefore(filterEnd.add(const Duration(microseconds: 1)))) {
         expensesPaid += e.amount;
       }
     }
 
     for (var inv in investments) {
-      if (!hasFilter || (inv.createdAt.isAfter(filterStart.subtract(const Duration(microseconds: 1))) && inv.createdAt.isBefore(filterEnd.add(const Duration(microseconds: 1))))) {
+      if (inv.createdAt.isAfter(effectiveStart.subtract(const Duration(microseconds: 1))) && inv.createdAt.isBefore(filterEnd.add(const Duration(microseconds: 1)))) {
         investmentsReceived += inv.amount;
       }
     }
 
     for (var ip in investorPayments) {
-      if (!hasFilter || (ip.paymentDate.isAfter(filterStart.subtract(const Duration(microseconds: 1))) && ip.paymentDate.isBefore(filterEnd.add(const Duration(microseconds: 1))))) {
+      if (ip.paymentDate.isAfter(effectiveStart.subtract(const Duration(microseconds: 1))) && ip.paymentDate.isBefore(filterEnd.add(const Duration(microseconds: 1)))) {
         if (ip.concept == InvestorPaymentConcept.principalReturn) {
           returnedToInvestors += ip.amount;
         } else {
@@ -819,18 +1219,28 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
       }
     }
 
-    // Pasivos (Deuda acumulada total de cara al fin del periodo)
+    for (var adj in adjustments) {
+      if (adj.date.isAfter(effectiveStart.subtract(const Duration(microseconds: 1))) && adj.date.isBefore(filterEnd.add(const Duration(microseconds: 1)))) {
+        adjustmentsInPeriod += adj.amount;
+      }
+    }
+
+    // Pasivos (Deuda acumulada total de cara al fin del periodo, respetando cutoff)
     double invTotalUpToEnd = 0;
     for (var inv in investments) {
-      if (!hasFilter || inv.createdAt.isBefore(filterEnd) || inv.createdAt.isAtSameMomentAs(filterEnd)) {
-        invTotalUpToEnd += inv.amount;
+      if (!inv.createdAt.isBefore(cutoffDate)) {
+        if (!hasFilter || inv.createdAt.isBefore(filterEnd) || inv.createdAt.isAtSameMomentAs(filterEnd)) {
+          invTotalUpToEnd += inv.amount;
+        }
       }
     }
     double retTotalUpToEnd = 0;
     for (var ip in investorPayments) {
       if (ip.concept == InvestorPaymentConcept.principalReturn) {
-        if (!hasFilter || ip.paymentDate.isBefore(filterEnd) || ip.paymentDate.isAtSameMomentAs(filterEnd)) {
-          retTotalUpToEnd += ip.amount;
+        if (!ip.paymentDate.isBefore(cutoffDate)) {
+          if (!hasFilter || ip.paymentDate.isBefore(filterEnd) || ip.paymentDate.isAtSameMomentAs(filterEnd)) {
+            retTotalUpToEnd += ip.amount;
+          }
         }
       }
     }
@@ -844,7 +1254,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Selector de Periodo
+          // Selector de Periodo + Botón de Ajuste
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
@@ -852,43 +1262,62 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                DropdownButton<String>(
-                  value: _selectedCajaPeriod,
-                  underline: const SizedBox(),
-                  icon: const Icon(Icons.arrow_drop_down),
-                  items: const [
-                    DropdownMenuItem(value: 'Historico', child: Text('Histórico (Todo)')),
-                    DropdownMenuItem(value: 'Este Mes', child: Text('Este Mes')),
-                    DropdownMenuItem(value: 'Mes Pasado', child: Text('Mes Pasado')),
-                    DropdownMenuItem(value: 'Personalizado', child: Text('Rango Personalizado')),
-                  ],
-                  onChanged: (val) async {
-                    if (val == 'Personalizado') {
-                      final picked = await showDateRangePicker(
-                        context: context,
-                        firstDate: DateTime(2020),
-                        lastDate: DateTime.now().add(const Duration(days: 365)),
-                      );
-                      if (picked != null) {
-                        setState(() {
-                          _selectedCajaPeriod = val!;
-                          _customCajaRange = picked;
-                        });
-                      }
-                    } else if (val != null) {
-                      setState(() {
-                        _selectedCajaPeriod = val;
-                      });
-                    }
-                  },
-                ),
-                if (_selectedCajaPeriod == 'Personalizado' && _customCajaRange != null)
-                  Text(
-                    '${_dateFormat.format(_customCajaRange!.start)} - ${_dateFormat.format(_customCajaRange!.end)}',
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                Expanded(
+                  child: Row(
+                    children: [
+                      DropdownButton<String>(
+                        value: _selectedCajaPeriod,
+                        underline: const SizedBox(),
+                        icon: const Icon(Icons.arrow_drop_down),
+                        items: const [
+                          DropdownMenuItem(value: 'Historico', child: Text('Histórico (Todo)')),
+                          DropdownMenuItem(value: 'Este Mes', child: Text('Este Mes')),
+                          DropdownMenuItem(value: 'Mes Pasado', child: Text('Mes Pasado')),
+                          DropdownMenuItem(value: 'Personalizado', child: Text('Rango Personalizado')),
+                        ],
+                        onChanged: (val) async {
+                          if (val == 'Personalizado') {
+                            final picked = await showDateRangePicker(
+                              context: context,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime.now().add(const Duration(days: 365)),
+                            );
+                            if (picked != null) {
+                              setState(() {
+                                _selectedCajaPeriod = val!;
+                                _customCajaRange = picked;
+                              });
+                            }
+                          } else if (val != null) {
+                            setState(() {
+                              _selectedCajaPeriod = val;
+                            });
+                          }
+                        },
+                      ),
+                      if (_selectedCajaPeriod == 'Personalizado' && _customCajaRange != null)
+                        Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: Text(
+                            '${_dateFormat.format(_customCajaRange!.start)} - ${_dateFormat.format(_customCajaRange!.end)}',
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                    ],
                   ),
+                ),
+                // Botón de Ajuste Manual
+                OutlinedButton.icon(
+                  onPressed: _showCashAdjustmentDialog,
+                  icon: const Icon(Icons.tune, size: 18),
+                  label: const Text('Ajustar Saldo', style: TextStyle(fontSize: 12)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.amber,
+                    side: const BorderSide(color: Colors.amber),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                ),
               ],
             ),
           ),
@@ -915,16 +1344,64 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
           ),
           const SizedBox(height: 32),
           Text(
-            hasFilter ? 'Flujo de Caja del Periodo' : 'Flujo de Caja Histórico',
+            hasFilter ? 'Flujo de Caja del Periodo' : 'Flujo de Caja Histórico (Desde Julio 2026)',
             style: GoogleFonts.outfit(fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const Divider(),
           const SizedBox(height: 8),
           _flowRow(Icons.arrow_downward, Colors.green, 'Cobros de Clientes (Periodo)', copFormatter.format(interestsEarned + moraEarned), true),
           _flowRow(Icons.arrow_downward, Colors.blue, 'Inversiones Recibidas (Periodo)', copFormatter.format(investmentsReceived), true),
+          if (adjustmentsInPeriod != 0)
+            _flowRow(
+              adjustmentsInPeriod > 0 ? Icons.arrow_downward : Icons.arrow_upward,
+              Colors.amber,
+              'Ajustes Manuales de Caja (Periodo)',
+              copFormatter.format(adjustmentsInPeriod.abs()),
+              adjustmentsInPeriod > 0,
+            ),
           _flowRow(Icons.arrow_upward, Colors.orange, 'Gastos Operativos (Periodo)', copFormatter.format(expensesPaid), false),
           _flowRow(Icons.arrow_upward, Colors.purple, 'Devolución de Capital a Inversores (Periodo)', copFormatter.format(returnedToInvestors), false),
           _flowRow(Icons.arrow_upward, Colors.amber, 'Pago de Intereses a Inversores (Periodo)', copFormatter.format(interestPaidToInvestors), false),
+
+          // Historial de ajustes manuales recientes
+          if (adjustments.isNotEmpty) ...[
+            const SizedBox(height: 32),
+            Text('Ajustes Manuales Recientes', style: GoogleFonts.outfit(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Divider(),
+            const SizedBox(height: 8),
+            ...adjustments.take(5).map((adj) => Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                children: [
+                  Icon(
+                    adj.amount > 0 ? Icons.add_circle_outline : Icons.remove_circle_outline,
+                    color: adj.amount > 0 ? Colors.green : Colors.red,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(adj.description, style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+                        Text('${_dateFormat.format(adj.date)} • ${adj.createdBy}', style: TextStyle(fontSize: 11, color: Colors.grey.shade500)),
+                      ],
+                    ),
+                  ),
+                  Text(
+                    '${adj.amount > 0 ? '+' : ''}${copFormatter.format(adj.amount)}',
+                    style: TextStyle(fontWeight: FontWeight.bold, color: adj.amount > 0 ? Colors.green : Colors.red),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                    onPressed: () => _confirmDeleteAdjustment(adj),
+                    tooltip: 'Eliminar Ajuste',
+                  ),
+                ],
+              ),
+            )),
+          ],
         ],
       ),
     );
@@ -1085,6 +1562,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
                 return Card(
                   margin: const EdgeInsets.only(bottom: 8),
                   child: ListTile(
+                    onTap: () => _showExpenseDetail(exp),
                     leading: CircleAvatar(
                       backgroundColor: Colors.orange.withValues(alpha: 0.2),
                       child: const Icon(Icons.money_off, color: Colors.orange),
