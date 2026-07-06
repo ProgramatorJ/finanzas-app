@@ -9,6 +9,7 @@ import '../../core/models/credit_model.dart';
 import '../../core/models/installment_model.dart';
 import '../calendar/calendar_providers.dart'; // Para joinedInstallmentsProvider
 import '../credits/credit_list_screen.dart'; // Para allCreditsStreamProvider, creditsClientsStreamProvider
+import '../shared/financial_providers.dart'; // Para providers de Tesoreria
 
 enum HistoricalPeriod {
   daily,
@@ -20,9 +21,9 @@ enum HistoricalPeriod {
 }
 
 class _HistoricalPeriodData {
-  double capitalSaldo = 0;
-  double interesMoraSaldo = 0;
-  double totalSaldo = 0;
+  double capitalCartera = 0; // Saldo de capital prestado a clientes (sin intereses)
+  double capitalCaja = 0;    // Dinero en caja general
+  double capitalTotal = 0;   // Caja + Cartera
 }
 
 class HistoricalPortfolioReportScreen extends ConsumerStatefulWidget {
@@ -127,14 +128,33 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
     final creditsAsync = ref.watch(allCreditsStreamProvider);
     final clientsAsync = ref.watch(creditsClientsStreamProvider);
     final allInstallmentsAsync = ref.watch(allInstallmentsStreamProvider);
+    final paymentsAsync = ref.watch(allPaymentsProvider);
+    final expensesAsync = ref.watch(expensesStreamProvider);
+    final investmentsAsync = ref.watch(investmentsStreamProvider);
+    final investorPaymentsAsync = ref.watch(allInvestorPaymentsStreamProvider);
+    final adjustmentsAsync = ref.watch(cashAdjustmentsStreamProvider);
 
-    if (creditsAsync.isLoading || clientsAsync.isLoading || allInstallmentsAsync.isLoading) {
+    final isLoading = creditsAsync.isLoading ||
+        clientsAsync.isLoading ||
+        allInstallmentsAsync.isLoading ||
+        paymentsAsync.isLoading ||
+        expensesAsync.isLoading ||
+        investmentsAsync.isLoading ||
+        investorPaymentsAsync.isLoading ||
+        adjustmentsAsync.isLoading;
+
+    if (isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
     final credits = creditsAsync.value ?? [];
     final clients = clientsAsync.value ?? [];
     final installments = allInstallmentsAsync.value ?? [];
+    final payments = paymentsAsync.value ?? [];
+    final expenses = expensesAsync.value ?? [];
+    final investments = investmentsAsync.value ?? [];
+    final investorPayments = investorPaymentsAsync.value ?? [];
+    final adjustments = adjustmentsAsync.value ?? [];
 
     final clientMap = {for (final cl in clients) cl.clientId: cl};
     
@@ -254,21 +274,64 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
         }
       }
 
-      md.capitalSaldo = totalCapitalDesembolsado - totalCapitalPagado;
-      if (md.capitalSaldo < 0) md.capitalSaldo = 0;
-      
-      md.interesMoraSaldo = (totalInteresEsperado - totalInteresPagado) + (totalMoraGenerada - totalMoraPagada);
-      if (md.interesMoraSaldo < 0) md.interesMoraSaldo = 0;
-      
-      md.totalSaldo = md.capitalSaldo + md.interesMoraSaldo;
+      md.capitalCartera = totalCapitalDesembolsado - totalCapitalPagado;
+      if (md.capitalCartera < 0) md.capitalCartera = 0;
+
+      // Calcular Caja General histórica al final de este periodo (pEnd)
+      final DateTime cutoffDate = DateTime(2026, 7, 1);
+      double recSubs = 0;
+      for (var p in payments) {
+        if (!p.paymentDate.isBefore(cutoffDate) && (p.paymentDate.isBefore(pEnd) || p.paymentDate.isAtSameMomentAs(pEnd))) {
+          recSubs += p.amountReceived;
+        }
+      }
+      double invSubs = 0;
+      for (var inv in investments) {
+        if (!inv.createdAt.isBefore(cutoffDate) && (inv.createdAt.isBefore(pEnd) || inv.createdAt.isAtSameMomentAs(pEnd))) {
+          invSubs += inv.amount;
+        }
+      }
+      double credSubs = 0;
+      for (var c in credits) {
+        if (!c.disbursementDate.isBefore(cutoffDate) && (c.disbursementDate.isBefore(pEnd) || c.disbursementDate.isAtSameMomentAs(pEnd))) {
+          credSubs += c.principalAmount;
+        }
+      }
+      double expSubs = 0;
+      for (var e in expenses) {
+        if (!e.date.isBefore(cutoffDate) && (e.date.isBefore(pEnd) || e.date.isAtSameMomentAs(pEnd))) {
+          expSubs += e.amount;
+        }
+      }
+      double ipSubs = 0;
+      for (var ip in investorPayments) {
+        if (!ip.paymentDate.isBefore(cutoffDate) && (ip.paymentDate.isBefore(pEnd) || ip.paymentDate.isAtSameMomentAs(pEnd))) {
+          ipSubs += ip.amount;
+        }
+      }
+      double adjSubs = 0;
+      for (var adj in adjustments) {
+        if (!adj.date.isBefore(cutoffDate) && (adj.date.isBefore(pEnd) || adj.date.isAtSameMomentAs(pEnd))) {
+          adjSubs += adj.amount;
+        }
+      }
+
+      md.capitalCaja = recSubs + invSubs - credSubs - expSubs - ipSubs + adjSubs;
+      md.capitalTotal = md.capitalCartera + md.capitalCaja;
     }
 
     double maxY = 0;
     for (var p in contiguousPeriods) {
-      final val = dataByPeriod[p]!.totalSaldo;
+      final val = dataByPeriod[p]!.capitalTotal;
       if (val > maxY) maxY = val;
     }
     if (maxY == 0) maxY = 100;
+
+    final latestPeriod = contiguousPeriods.last;
+    final latestData = dataByPeriod[latestPeriod] ?? _HistoricalPeriodData();
+    final currentCaja = latestData.capitalCaja;
+    final currentCartera = latestData.capitalCartera;
+    final currentTotal = latestData.capitalTotal;
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -340,7 +403,43 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
           ),
           const SizedBox(height: 24),
 
-          _buildSectionHeader('Capital Total (Evolución de Saldos)', isDark),
+          // Tarjetas de Resumen de Capital
+          Center(
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              alignment: WrapAlignment.center,
+              children: [
+                _buildCapitalCard(
+                  title: 'Capital en Caja',
+                  subtitle: 'Disponible líquido (Jul/26+)',
+                  value: copFormatter.format(currentCaja),
+                  icon: Icons.wallet_rounded,
+                  color: const Color(0xFF7E9CD8),
+                  isDark: isDark,
+                ),
+                _buildCapitalCard(
+                  title: 'Capital en Cartera',
+                  subtitle: 'Créditos activos colocados',
+                  value: copFormatter.format(currentCartera),
+                  icon: Icons.payments_rounded,
+                  color: const Color(0xFF3D8BFF),
+                  isDark: isDark,
+                ),
+                _buildCapitalCard(
+                  title: 'Capital Total',
+                  subtitle: 'Suma de Caja y Cartera',
+                  value: copFormatter.format(currentTotal),
+                  icon: Icons.account_balance_rounded,
+                  color: const Color(0xFF00E5FF),
+                  isDark: isDark,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 32),
+
+          _buildSectionHeader('Evolución del Capital y Cartera', isDark),
           const SizedBox(height: 16),
           Container(
             height: 350,
@@ -404,32 +503,32 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                   ),
                 ),
                 borderData: FlBorderData(show: false),
-                minX: 0,
-                maxX: (contiguousPeriods.length - 1).toDouble(),
+                minX: -0.2,
+                maxX: (contiguousPeriods.length - 0.5).toDouble(),
                 minY: 0,
-                maxY: maxY * 1.2,
+                maxY: maxY * 1.15,
                 lineBarsData: [
                   LineChartBarData(
                     spots: List.generate(contiguousPeriods.length, (i) {
-                      return FlSpot(i.toDouble(), dataByPeriod[contiguousPeriods[i]]!.capitalSaldo);
+                      return FlSpot(i.toDouble(), dataByPeriod[contiguousPeriods[i]]!.capitalCaja);
                     }),
                     isCurved: true,
-                    gradient: const LinearGradient(colors: [Color(0xFF4A84E6), Color(0xFF6BA0FF)]),
-                    barWidth: 3,
+                    gradient: const LinearGradient(colors: [Color(0xFF7E9CD8), Color(0xFF9EBAE8)]),
+                    barWidth: 1.8,
                     isStrokeCapRound: true,
                     dotData: FlDotData(
                       show: true,
                       getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
-                        radius: 4,
-                        color: const Color(0xFF4A84E6),
-                        strokeWidth: 2,
+                        radius: 3,
+                        color: const Color(0xFF7E9CD8),
+                        strokeWidth: 1.5,
                         strokeColor: Colors.white,
                       ),
                     ),
                     belowBarData: BarAreaData(
                       show: true,
                       gradient: LinearGradient(
-                        colors: [const Color(0xFF4A84E6).withValues(alpha: 0.15), const Color(0xFF4A84E6).withValues(alpha: 0.0)],
+                        colors: [const Color(0xFF7E9CD8).withValues(alpha: 0.08), const Color(0xFF7E9CD8).withValues(alpha: 0.0)],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                       ),
@@ -437,25 +536,25 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                   ),
                   LineChartBarData(
                     spots: List.generate(contiguousPeriods.length, (i) {
-                      return FlSpot(i.toDouble(), dataByPeriod[contiguousPeriods[i]]!.interesMoraSaldo);
+                      return FlSpot(i.toDouble(), dataByPeriod[contiguousPeriods[i]]!.capitalCartera);
                     }),
                     isCurved: true,
-                    gradient: const LinearGradient(colors: [Color(0xFFFFA726), Color(0xFFFFD54F)]),
-                    barWidth: 3,
+                    gradient: const LinearGradient(colors: [Color(0xFF3D8BFF), Color(0xFF6BA0FF)]),
+                    barWidth: 1.8,
                     isStrokeCapRound: true,
                     dotData: FlDotData(
                       show: true,
                       getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
-                        radius: 4,
-                        color: const Color(0xFFFFA726),
-                        strokeWidth: 2,
+                        radius: 3,
+                        color: const Color(0xFF3D8BFF),
+                        strokeWidth: 1.5,
                         strokeColor: Colors.white,
                       ),
                     ),
                     belowBarData: BarAreaData(
                       show: true,
                       gradient: LinearGradient(
-                        colors: [Colors.amber.withValues(alpha: 0.15), Colors.amber.withValues(alpha: 0.0)],
+                        colors: [const Color(0xFF3D8BFF).withValues(alpha: 0.08), const Color(0xFF3D8BFF).withValues(alpha: 0.0)],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                       ),
@@ -463,25 +562,25 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                   ),
                   LineChartBarData(
                     spots: List.generate(contiguousPeriods.length, (i) {
-                      return FlSpot(i.toDouble(), dataByPeriod[contiguousPeriods[i]]!.totalSaldo);
+                      return FlSpot(i.toDouble(), dataByPeriod[contiguousPeriods[i]]!.capitalTotal);
                     }),
                     isCurved: true,
-                    gradient: const LinearGradient(colors: [Color(0xFF7C4DFF), Color(0xFFB388FF)]),
-                    barWidth: 4,
+                    gradient: const LinearGradient(colors: [Color(0xFF00E5FF), Color(0xFF00FFCC)]),
+                    barWidth: 2.2,
                     isStrokeCapRound: true,
                     dotData: FlDotData(
                       show: true,
                       getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
-                        radius: 5,
-                        color: const Color(0xFF7C4DFF),
-                        strokeWidth: 2,
+                        radius: 3.5,
+                        color: const Color(0xFF00E5FF),
+                        strokeWidth: 1.5,
                         strokeColor: Colors.white,
                       ),
                     ),
                     belowBarData: BarAreaData(
                       show: true,
                       gradient: LinearGradient(
-                        colors: [const Color(0xFF7C4DFF).withValues(alpha: 0.15), const Color(0xFF7C4DFF).withValues(alpha: 0.0)],
+                        colors: [const Color(0xFF00E5FF).withValues(alpha: 0.12), const Color(0xFF00E5FF).withValues(alpha: 0.0)],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                       ),
@@ -495,9 +594,9 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                       return touchedSpots.map((spot) {
                         final date = contiguousPeriods[spot.x.toInt()];
                         String label = '';
-                        if (spot.barIndex == 0) label = 'Capital: ';
-                        if (spot.barIndex == 1) label = 'Int+Mora: ';
-                        if (spot.barIndex == 2) label = 'Total: ';
+                        if (spot.barIndex == 0) label = 'Caja: ';
+                        if (spot.barIndex == 1) label = 'Cartera: ';
+                        if (spot.barIndex == 2) label = 'Cap. Total: ';
                         return LineTooltipItem(
                           '$label${copFormatter.format(spot.y)}',
                           TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold),
@@ -516,9 +615,9 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
               spacing: 24,
               alignment: WrapAlignment.center,
               children: [
-                _buildLegendDot(const Color(0xFF4A84E6), 'Saldo Capital'),
-                _buildLegendDot(Colors.amber, 'Saldo Interés+Mora'),
-                _buildLegendDot(const Color(0xFF7C4DFF), 'Saldo Total'),
+                _buildLegendDot(const Color(0xFF7E9CD8), 'Capital en Caja'),
+                _buildLegendDot(const Color(0xFF3D8BFF), 'Capital en Cartera'),
+                _buildLegendDot(const Color(0xFF00E5FF), 'Capital Total'),
               ],
             ),
           ),
@@ -600,6 +699,64 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
     return Scaffold(
       appBar: AppBar(title: const Text('Capital Total')),
       body: content,
+    );
+  }
+
+  Widget _buildCapitalCard({
+    required String title,
+    required String subtitle,
+    required String value,
+    required IconData icon,
+    required Color color,
+    required bool isDark,
+  }) {
+    return Container(
+      width: 290,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            isDark ? const Color(0xFF14141E) : Colors.white,
+            isDark ? color.withValues(alpha: 0.05) : color.withValues(alpha: 0.03),
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: color.withValues(alpha: 0.25)),
+        boxShadow: [
+          BoxShadow(color: color.withValues(alpha: 0.08), blurRadius: 16, spreadRadius: 2),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: color, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title, style: GoogleFonts.outfit(fontSize: 13, fontWeight: FontWeight.w600, color: isDark ? Colors.white70 : Colors.black54)),
+                    Text(subtitle, style: TextStyle(fontSize: 10, color: isDark ? Colors.white30 : Colors.black38)),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Text(value, style: GoogleFonts.outfit(fontSize: 24, fontWeight: FontWeight.bold, color: color)),
+        ],
+      ),
     );
   }
 

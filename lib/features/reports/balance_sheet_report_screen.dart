@@ -163,9 +163,6 @@ class _BalanceSheetReportScreenState extends ConsumerState<BalanceSheetReportScr
     double moraAcumulada = 0;
 
     for (var c in credits) {
-      if (c.disbursementDate.isBefore(cutoffDate)) {
-        continue;
-      }
       if (hasFilter && c.disbursementDate.isAfter(filterEnd)) {
         continue;
       }
@@ -201,9 +198,6 @@ class _BalanceSheetReportScreenState extends ConsumerState<BalanceSheetReportScr
     // ─── CÁLCULO DE PASIVOS HISTÓRICOS (Respetando cutoff) ───
     double deudaInversores = 0;
     for (var inv in investments) {
-      if (inv.createdAt.isBefore(cutoffDate)) {
-        continue;
-      }
       if (hasFilter && inv.createdAt.isAfter(filterEnd)) {
         continue;
       }
