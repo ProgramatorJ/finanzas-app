@@ -316,6 +316,8 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
     final currentCaja = centralMetrics.cajaActual;
     final currentCartera = centralMetrics.carteraActivaCapital;
     final currentTotal = currentCaja + currentCartera;
+    final currentInteresMora = centralMetrics.interesesPorCobrar + centralMetrics.moraAcumulada;
+    final currentActivos = currentTotal + currentInteresMora;
 
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
@@ -395,6 +397,14 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
               alignment: WrapAlignment.center,
               children: [
                 _buildCapitalCard(
+                  title: 'Interés + Mora',
+                  subtitle: 'Saldos pendientes (I+M)',
+                  value: copFormatter.format(currentInteresMora),
+                  icon: Icons.hourglass_empty_rounded,
+                  color: const Color(0xFFAEC4EB),
+                  isDark: isDark,
+                ),
+                _buildCapitalCard(
                   title: 'Capital en Caja',
                   subtitle: 'Disponible líquido (Jul/26+)',
                   value: copFormatter.format(currentCaja),
@@ -415,7 +425,15 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                   subtitle: 'Suma de Caja y Cartera',
                   value: copFormatter.format(currentTotal),
                   icon: Icons.account_balance_rounded,
-                  color: const Color(0xFF00E5FF),
+                  color: const Color(0xFF00B0FF),
+                  isDark: isDark,
+                ),
+                _buildCapitalCard(
+                  title: 'Total Activos',
+                  subtitle: 'Caja + Cartera + I + M',
+                  value: copFormatter.format(currentActivos),
+                  icon: Icons.analytics_rounded,
+                  color: const Color(0xFF00F0FF),
                   isDark: isDark,
                 ),
               ],
@@ -498,21 +516,21 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                     }),
                     isCurved: true,
                     gradient: const LinearGradient(colors: [Color(0xFFAEC4EB), Color(0xFFC5D4F0)]),
-                    barWidth: 1.8,
+                    barWidth: 1.0,
                     isStrokeCapRound: true,
                     dotData: FlDotData(
                       show: true,
                       getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
-                        radius: 3,
+                        radius: 1.2,
                         color: const Color(0xFFAEC4EB),
-                        strokeWidth: 1.5,
+                        strokeWidth: 0.7,
                         strokeColor: Colors.white,
                       ),
                     ),
                     belowBarData: BarAreaData(
                       show: true,
                       gradient: LinearGradient(
-                        colors: [const Color(0xFFAEC4EB).withValues(alpha: 0.06), const Color(0xFFAEC4EB).withValues(alpha: 0.0)],
+                        colors: [const Color(0xFFAEC4EB).withValues(alpha: 0.01), const Color(0xFFAEC4EB).withValues(alpha: 0.0)],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                       ),
@@ -524,21 +542,21 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                     }),
                     isCurved: true,
                     gradient: const LinearGradient(colors: [Color(0xFF7E9CD8), Color(0xFF9EBAE8)]),
-                    barWidth: 1.8,
+                    barWidth: 1.0,
                     isStrokeCapRound: true,
                     dotData: FlDotData(
                       show: true,
                       getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
-                        radius: 3,
+                        radius: 1.2,
                         color: const Color(0xFF7E9CD8),
-                        strokeWidth: 1.5,
+                        strokeWidth: 0.7,
                         strokeColor: Colors.white,
                       ),
                     ),
                     belowBarData: BarAreaData(
                       show: true,
                       gradient: LinearGradient(
-                        colors: [const Color(0xFF7E9CD8).withValues(alpha: 0.06), const Color(0xFF7E9CD8).withValues(alpha: 0.0)],
+                        colors: [const Color(0xFF7E9CD8).withValues(alpha: 0.01), const Color(0xFF7E9CD8).withValues(alpha: 0.0)],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                       ),
@@ -550,21 +568,21 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                     }),
                     isCurved: true,
                     gradient: const LinearGradient(colors: [Color(0xFF3D8BFF), Color(0xFF6BA0FF)]),
-                    barWidth: 1.8,
+                    barWidth: 1.0,
                     isStrokeCapRound: true,
                     dotData: FlDotData(
                       show: true,
                       getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
-                        radius: 3,
+                        radius: 1.2,
                         color: const Color(0xFF3D8BFF),
-                        strokeWidth: 1.5,
+                        strokeWidth: 0.7,
                         strokeColor: Colors.white,
                       ),
                     ),
                     belowBarData: BarAreaData(
                       show: true,
                       gradient: LinearGradient(
-                        colors: [const Color(0xFF3D8BFF).withValues(alpha: 0.06), const Color(0xFF3D8BFF).withValues(alpha: 0.0)],
+                        colors: [const Color(0xFF3D8BFF).withValues(alpha: 0.01), const Color(0xFF3D8BFF).withValues(alpha: 0.0)],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                       ),
@@ -576,21 +594,21 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                     }),
                     isCurved: true,
                     gradient: const LinearGradient(colors: [Color(0xFF00B0FF), Color(0xFF00E5FF)]),
-                    barWidth: 1.8,
+                    barWidth: 1.0,
                     isStrokeCapRound: true,
                     dotData: FlDotData(
                       show: true,
                       getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
-                        radius: 3,
+                        radius: 1.2,
                         color: const Color(0xFF00B0FF),
-                        strokeWidth: 1.5,
+                        strokeWidth: 0.7,
                         strokeColor: Colors.white,
                       ),
                     ),
                     belowBarData: BarAreaData(
                       show: true,
                       gradient: LinearGradient(
-                        colors: [const Color(0xFF00B0FF).withValues(alpha: 0.08), const Color(0xFF00B0FF).withValues(alpha: 0.0)],
+                        colors: [const Color(0xFF00B0FF).withValues(alpha: 0.015), const Color(0xFF00B0FF).withValues(alpha: 0.0)],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                       ),
@@ -602,21 +620,21 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                     }),
                     isCurved: true,
                     gradient: const LinearGradient(colors: [Color(0xFF00F0FF), Color(0xFF00FFCC)]),
-                    barWidth: 2.2,
+                    barWidth: 1.3,
                     isStrokeCapRound: true,
                     dotData: FlDotData(
                       show: true,
                       getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
-                        radius: 3.5,
+                        radius: 1.5,
                         color: const Color(0xFF00F0FF),
-                        strokeWidth: 1.5,
+                        strokeWidth: 0.7,
                         strokeColor: Colors.white,
                       ),
                     ),
                     belowBarData: BarAreaData(
                       show: true,
                       gradient: LinearGradient(
-                        colors: [const Color(0xFF00F0FF).withValues(alpha: 0.12), const Color(0xFF00F0FF).withValues(alpha: 0.0)],
+                        colors: [const Color(0xFF00F0FF).withValues(alpha: 0.02), const Color(0xFF00F0FF).withValues(alpha: 0.0)],
                         begin: Alignment.topCenter,
                         end: Alignment.bottomCenter,
                       ),
@@ -624,11 +642,26 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                   ),
                 ],
                 lineTouchData: LineTouchData(
+                  getTouchedSpotIndicator: (LineChartBarData barData, List<int> spotIndexes) {
+                    return spotIndexes.map((index) {
+                      return TouchedSpotIndicatorData(
+                        FlLine(
+                          color: isDark ? Colors.white12 : Colors.black12,
+                          strokeWidth: 1,
+                          dashArray: [3, 3],
+                        ),
+                        FlDotData(show: false),
+                      );
+                    }).toList();
+                  },
                   touchTooltipData: LineTouchTooltipData(
-                    getTooltipColor: (spot) => isDark ? const Color(0xFF1A1A2E) : Colors.grey.shade200,
+                    getTooltipColor: (spot) => isDark ? const Color(0xCC14141E) : const Color(0xE6FFFFFF),
+                    tooltipBorder: BorderSide(
+                      color: isDark ? Colors.white10 : Colors.black12,
+                      width: 0.5,
+                    ),
                     getTooltipItems: (touchedSpots) {
                       return touchedSpots.map((spot) {
-                        final date = contiguousPeriods[spot.x.toInt()];
                         String label = '';
                         if (spot.barIndex == 0) label = 'Int+Mora: ';
                         if (spot.barIndex == 1) label = 'Caja: ';
@@ -637,7 +670,11 @@ class _HistoricalPortfolioReportScreenState extends ConsumerState<HistoricalPort
                         if (spot.barIndex == 4) label = 'Total Activos: ';
                         return LineTooltipItem(
                           '$label${copFormatter.format(spot.y)}',
-                          TextStyle(color: isDark ? Colors.white : Colors.black, fontWeight: FontWeight.bold),
+                          TextStyle(
+                            color: isDark ? Colors.white70 : Colors.black87,
+                            fontWeight: FontWeight.w500,
+                            fontSize: 10,
+                          ),
                         );
                       }).toList();
                     },
