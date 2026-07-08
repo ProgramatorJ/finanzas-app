@@ -6,7 +6,7 @@ enum InvestorPaymentConcept {
 
   static InvestorPaymentConcept fromString(String concept) {
     return InvestorPaymentConcept.values.firstWhere(
-      (e) => e.name == concept.toLowerCase(),
+      (e) => e.name.toLowerCase() == concept.toLowerCase(),
       orElse: () => InvestorPaymentConcept.interestPayment,
     );
   }

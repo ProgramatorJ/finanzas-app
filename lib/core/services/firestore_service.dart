@@ -685,47 +685,44 @@ class FirestoreService {
     // 1. Eliminar documento principal de la inversión
     batch.delete(_db.collection('investments').doc(investmentId));
 
-    // 2. Ajustar el saldo de tesorería restando el capital principal de la inversión
-    batch.set(
-      _db.collection('treasury').doc('main'),
-      {
-        'currentBalance': FieldValue.increment(-amount),
-        'totalInvestmentsReceived': FieldValue.increment(-amount),
-        'lastUpdated': FieldValue.serverTimestamp(),
-      },
-      SetOptions(merge: true),
-    );
+    double netCurrentBalanceChange = -amount;
+    double netInvestmentsReceivedChange = -amount;
+    double netInterestPaidChange = 0.0;
+    double netPrincipalReturnedChange = 0.0;
 
-    // 3. Obtener y eliminar pagos de inversores (devolución y/o intereses) asociados
+    // 2. Obtener y eliminar pagos de inversores (devolución y/o intereses) asociados
     final paymentsSnap = await _db.collection('investments').doc(investmentId).collection('investor_payments').get();
     for (var doc in paymentsSnap.docs) {
       batch.delete(doc.reference);
       final data = doc.data();
       final concept = data['concept'];
       final payAmount = (data['amount'] as num?)?.toDouble() ?? 0.0;
+      
+      // Al eliminar un pago, reintegramos el dinero a la caja (sale menos dinero)
+      netCurrentBalanceChange += payAmount;
+      
       if (concept == 'interestPayment') {
-        batch.set(
-          _db.collection('treasury').doc('main'),
-          {
-            'currentBalance': FieldValue.increment(payAmount),
-            'totalInterestPaidToInvestors': FieldValue.increment(-payAmount),
-            'lastUpdated': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
+        netInterestPaidChange -= payAmount;
       } else {
         // principalReturn
-        batch.set(
-          _db.collection('treasury').doc('main'),
-          {
-            'currentBalance': FieldValue.increment(payAmount),
-            'totalReturnedToInvestors': FieldValue.increment(-payAmount),
-            'lastUpdated': FieldValue.serverTimestamp(),
-          },
-          SetOptions(merge: true),
-        );
+        netPrincipalReturnedChange -= payAmount;
       }
     }
+
+    // 3. Ajustar el saldo de tesorería y acumulados en un único set
+    batch.set(
+      _db.collection('treasury').doc('main'),
+      {
+        'currentBalance': FieldValue.increment(netCurrentBalanceChange),
+        'totalInvestmentsReceived': FieldValue.increment(netInvestmentsReceivedChange),
+        if (netInterestPaidChange != 0)
+          'totalInterestPaidToInvestors': FieldValue.increment(netInterestPaidChange),
+        if (netPrincipalReturnedChange != 0)
+          'totalReturnedToInvestors': FieldValue.increment(netPrincipalReturnedChange),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
 
     await batch.commit();
   }
@@ -796,7 +793,7 @@ class FirestoreService {
     final payDocRef = _db
         .collection('investments')
         .doc(investmentId)
-        .collection('payments')
+        .collection('investor_payments')
         .doc(payment.paymentId);
 
     final batch = _db.batch();
@@ -846,7 +843,7 @@ class FirestoreService {
     final payDocRef = _db
         .collection('investments')
         .doc(investmentId)
-        .collection('payments')
+        .collection('investor_payments')
         .doc(oldPayment.paymentId);
 
     final batch = _db.batch();
@@ -855,65 +852,49 @@ class FirestoreService {
     final investmentRef = _db.collection('investments').doc(investmentId);
     final treasuryRef = _db.collection('treasury').doc('main');
 
-    // 1. Revertir oldPayment
-    if (oldPayment.concept == InvestorPaymentConcept.interestPayment) {
-      batch.update(investmentRef, {
-        'totalInterestPaid': FieldValue.increment(-oldPayment.amount),
-      });
-      batch.set(
-        treasuryRef,
-        {
-          'currentBalance': FieldValue.increment(oldPayment.amount),
-          'totalInterestPaidToInvestors': FieldValue.increment(-oldPayment.amount),
-        },
-        SetOptions(merge: true),
-      );
-    } else {
-      batch.update(investmentRef, {
-        'totalPrincipalReturned': FieldValue.increment(-oldPayment.amount),
-        'outstandingBalance': FieldValue.increment(oldPayment.amount),
-      });
-      batch.set(
-        treasuryRef,
-        {
-          'currentBalance': FieldValue.increment(oldPayment.amount),
-          'totalReturnedToInvestors': FieldValue.increment(-oldPayment.amount),
-        },
-        SetOptions(merge: true),
-      );
-    }
+    // Calcular diferencias para InvestmentModel
+    final double diffInterest = (newPayment.concept == InvestorPaymentConcept.interestPayment ? newPayment.amount : 0.0) -
+        (oldPayment.concept == InvestorPaymentConcept.interestPayment ? oldPayment.amount : 0.0);
 
-    // 2. Aplicar newPayment
-    if (newPayment.concept == InvestorPaymentConcept.interestPayment) {
-      batch.update(investmentRef, {
-        'totalInterestPaid': FieldValue.increment(newPayment.amount),
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
-      });
-      batch.set(
-        treasuryRef,
-        {
-          'currentBalance': FieldValue.increment(-newPayment.amount),
-          'totalInterestPaidToInvestors': FieldValue.increment(newPayment.amount),
-          'lastUpdated': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
-    } else {
-      batch.update(investmentRef, {
-        'totalPrincipalReturned': FieldValue.increment(newPayment.amount),
-        'outstandingBalance': FieldValue.increment(-newPayment.amount),
-        'updatedAt': Timestamp.fromDate(DateTime.now()),
-      });
-      batch.set(
-        treasuryRef,
-        {
-          'currentBalance': FieldValue.increment(-newPayment.amount),
-          'totalReturnedToInvestors': FieldValue.increment(newPayment.amount),
-          'lastUpdated': FieldValue.serverTimestamp(),
-        },
-        SetOptions(merge: true),
-      );
+    final double diffPrincipal = (newPayment.concept == InvestorPaymentConcept.principalReturn ? newPayment.amount : 0.0) -
+        (oldPayment.concept == InvestorPaymentConcept.principalReturn ? oldPayment.amount : 0.0);
+
+    // Calcular diferencias para Treasury
+    final double diffCurrentBalance = oldPayment.amount - newPayment.amount;
+
+    final double diffTotalInterestPaidToInvestors = (newPayment.concept == InvestorPaymentConcept.interestPayment ? newPayment.amount : 0.0) -
+        (oldPayment.concept == InvestorPaymentConcept.interestPayment ? oldPayment.amount : 0.0);
+
+    final double diffTotalReturnedToInvestors = (newPayment.concept == InvestorPaymentConcept.principalReturn ? newPayment.amount : 0.0) -
+        (oldPayment.concept == InvestorPaymentConcept.principalReturn ? oldPayment.amount : 0.0);
+
+    // 1. Modificar Investment
+    final Map<String, dynamic> investmentUpdate = {
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    };
+    if (diffInterest != 0) {
+      investmentUpdate['totalInterestPaid'] = FieldValue.increment(diffInterest);
     }
+    if (diffPrincipal != 0) {
+      investmentUpdate['totalPrincipalReturned'] = FieldValue.increment(diffPrincipal);
+      investmentUpdate['outstandingBalance'] = FieldValue.increment(-diffPrincipal);
+    }
+    batch.update(investmentRef, investmentUpdate);
+
+    // 2. Modificar Treasury
+    final Map<String, dynamic> treasuryUpdate = {
+      'lastUpdated': FieldValue.serverTimestamp(),
+    };
+    if (diffCurrentBalance != 0) {
+      treasuryUpdate['currentBalance'] = FieldValue.increment(diffCurrentBalance);
+    }
+    if (diffTotalInterestPaidToInvestors != 0) {
+      treasuryUpdate['totalInterestPaidToInvestors'] = FieldValue.increment(diffTotalInterestPaidToInvestors);
+    }
+    if (diffTotalReturnedToInvestors != 0) {
+      treasuryUpdate['totalReturnedToInvestors'] = FieldValue.increment(diffTotalReturnedToInvestors);
+    }
+    batch.set(treasuryRef, treasuryUpdate, SetOptions(merge: true));
 
     await batch.commit();
   }
