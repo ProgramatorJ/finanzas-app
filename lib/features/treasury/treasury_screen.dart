@@ -743,6 +743,26 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
                               ),
                             ),
                             Text(DateFormat('dd/MM/yy').format(p.paymentDate), style: const TextStyle(fontSize: 12)),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.edit, size: 16, color: Colors.grey),
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _showEditInvestorPaymentDialog(inv, p);
+                              },
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.delete, size: 16, color: Colors.redAccent),
+                              onPressed: () {
+                                Navigator.pop(context);
+                                _confirmDeleteInvestorPayment(inv, p);
+                              },
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(),
+                            ),
                           ],
                         ),
                       )),
@@ -771,6 +791,172 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
             ],
           ),
         );
+      },
+    );
+  }
+
+  void _confirmDeleteInvestorPayment(InvestmentModel inv, InvestorPaymentModel payment) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return GlassmorphicContainer(
+          child: AlertDialog(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            title: const Text('Confirmar eliminación'),
+            content: Text(
+              '¿Estás seguro de que deseas eliminar este pago de '
+              '${copFormatter.format(payment.amount)} por concepto de '
+              '${payment.concept == InvestorPaymentConcept.interestPayment ? "Intereses" : "Devolución de Capital"}?'
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+              ElevatedButton(
+                onPressed: () async {
+                  Navigator.pop(context);
+                  try {
+                    await ref.read(firestoreServiceProvider).deleteInvestorPaymentTransaction(
+                      investmentId: inv.investmentId,
+                      payment: payment,
+                    );
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Pago eliminado correctamente'))
+                      );
+                    }
+                  } catch (e) {
+                    if (mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Error al eliminar: $e'), backgroundColor: AppTheme.errorColor)
+                      );
+                    }
+                  }
+                },
+                style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorColor),
+                child: const Text('Eliminar'),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _showEditInvestorPaymentDialog(InvestmentModel investment, InvestorPaymentModel payment) {
+    final editAmountController = TextEditingController(text: payment.amount.toStringAsFixed(0));
+    final editNotesController = TextEditingController(text: payment.notes ?? '');
+    InvestorPaymentConcept editConcept = payment.concept;
+    DateTime editPaymentDate = payment.paymentDate;
+    final editFormKey = GlobalKey<FormState>();
+    bool isSavingEdit = false;
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(builder: (context, setDialogState) {
+          return GlassmorphicContainer(
+            child: AlertDialog(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              title: Text('Editar pago de ${investment.investorName}'),
+              content: Form(
+                key: editFormKey,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      DropdownButtonFormField<InvestorPaymentConcept>(
+                        value: editConcept,
+                        decoration: const InputDecoration(labelText: 'Concepto'),
+                        items: const [
+                          DropdownMenuItem(value: InvestorPaymentConcept.interestPayment, child: Text('Pago de Intereses')),
+                          DropdownMenuItem(value: InvestorPaymentConcept.principalReturn, child: Text('Devolución de Capital')),
+                        ],
+                        onChanged: (val) { if (val != null) setDialogState(() => editConcept = val); },
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: editAmountController,
+                        decoration: const InputDecoration(labelText: 'Monto (\$)'),
+                        keyboardType: TextInputType.number,
+                        validator: (val) {
+                          if (val == null || val.isEmpty) return 'Requerido';
+                          final parsed = double.tryParse(val.replaceAll(',', ''));
+                          if (parsed == null || parsed <= 0) return 'Monto inválido';
+                          return null;
+                        },
+                      ),
+                      const SizedBox(height: 16),
+                      InkWell(
+                        onTap: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: editPaymentDate,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now().add(const Duration(days: 365)),
+                          );
+                          if (picked != null) setDialogState(() => editPaymentDate = picked);
+                        },
+                        child: InputDecorator(
+                          decoration: const InputDecoration(labelText: 'Fecha del Pago', suffixIcon: Icon(Icons.calendar_today)),
+                          child: Text(_dateFormat.format(editPaymentDate)),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: editNotesController,
+                        decoration: const InputDecoration(labelText: 'Notas (opcional)'),
+                        maxLines: 2,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+                ElevatedButton(
+                  onPressed: isSavingEdit ? null : () async {
+                    if (!editFormKey.currentState!.validate()) return;
+                    setDialogState(() => isSavingEdit = true);
+                    
+                    try {
+                      final newPayment = InvestorPaymentModel(
+                        paymentId: payment.paymentId,
+                        investmentId: payment.investmentId,
+                        amount: double.parse(editAmountController.text.replaceAll(',', '')),
+                        concept: editConcept,
+                        notes: editNotesController.text,
+                        paymentDate: editPaymentDate,
+                        createdAt: payment.createdAt,
+                      );
+
+                      await ref.read(firestoreServiceProvider).updateInvestorPaymentTransaction(
+                        investmentId: investment.investmentId,
+                        oldPayment: payment,
+                        newPayment: newPayment,
+                      );
+
+                      if (context.mounted) {
+                        Navigator.pop(context);
+                        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Pago actualizado correctamente')));
+                      }
+                    } catch (e) {
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Error: $e'), backgroundColor: AppTheme.errorColor));
+                      }
+                    } finally {
+                      setDialogState(() => isSavingEdit = false);
+                    }
+                  },
+                  child: isSavingEdit
+                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                      : const Text('Guardar Cambios'),
+                ),
+              ],
+            ),
+          );
+        });
       },
     );
   }

@@ -788,6 +788,136 @@ class FirestoreService {
     await batch.commit();
   }
 
+  /// Elimina un pago de inversor revirtiendo los efectos financieros en la inversión y tesorería.
+  Future<void> deleteInvestorPaymentTransaction({
+    required String investmentId,
+    required InvestorPaymentModel payment,
+  }) async {
+    final payDocRef = _db
+        .collection('investments')
+        .doc(investmentId)
+        .collection('payments')
+        .doc(payment.paymentId);
+
+    final batch = _db.batch();
+    batch.delete(payDocRef);
+
+    final investmentRef = _db.collection('investments').doc(investmentId);
+    if (payment.concept == InvestorPaymentConcept.interestPayment) {
+      batch.update(investmentRef, {
+        'totalInterestPaid': FieldValue.increment(-payment.amount),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      batch.set(
+        _db.collection('treasury').doc('main'),
+        {
+          'currentBalance': FieldValue.increment(payment.amount),
+          'totalInterestPaidToInvestors': FieldValue.increment(-payment.amount),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } else {
+      batch.update(investmentRef, {
+        'totalPrincipalReturned': FieldValue.increment(-payment.amount),
+        'outstandingBalance': FieldValue.increment(payment.amount),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      batch.set(
+        _db.collection('treasury').doc('main'),
+        {
+          'currentBalance': FieldValue.increment(payment.amount),
+          'totalReturnedToInvestors': FieldValue.increment(-payment.amount),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
+  }
+
+  /// Actualiza un pago de inversor revirtiendo el antiguo y aplicando el nuevo.
+  Future<void> updateInvestorPaymentTransaction({
+    required String investmentId,
+    required InvestorPaymentModel oldPayment,
+    required InvestorPaymentModel newPayment,
+  }) async {
+    final payDocRef = _db
+        .collection('investments')
+        .doc(investmentId)
+        .collection('payments')
+        .doc(oldPayment.paymentId);
+
+    final batch = _db.batch();
+    batch.update(payDocRef, newPayment.toMap());
+
+    final investmentRef = _db.collection('investments').doc(investmentId);
+    final treasuryRef = _db.collection('treasury').doc('main');
+
+    // 1. Revertir oldPayment
+    if (oldPayment.concept == InvestorPaymentConcept.interestPayment) {
+      batch.update(investmentRef, {
+        'totalInterestPaid': FieldValue.increment(-oldPayment.amount),
+      });
+      batch.set(
+        treasuryRef,
+        {
+          'currentBalance': FieldValue.increment(oldPayment.amount),
+          'totalInterestPaidToInvestors': FieldValue.increment(-oldPayment.amount),
+        },
+        SetOptions(merge: true),
+      );
+    } else {
+      batch.update(investmentRef, {
+        'totalPrincipalReturned': FieldValue.increment(-oldPayment.amount),
+        'outstandingBalance': FieldValue.increment(oldPayment.amount),
+      });
+      batch.set(
+        treasuryRef,
+        {
+          'currentBalance': FieldValue.increment(oldPayment.amount),
+          'totalReturnedToInvestors': FieldValue.increment(-oldPayment.amount),
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    // 2. Aplicar newPayment
+    if (newPayment.concept == InvestorPaymentConcept.interestPayment) {
+      batch.update(investmentRef, {
+        'totalInterestPaid': FieldValue.increment(newPayment.amount),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      batch.set(
+        treasuryRef,
+        {
+          'currentBalance': FieldValue.increment(-newPayment.amount),
+          'totalInterestPaidToInvestors': FieldValue.increment(newPayment.amount),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } else {
+      batch.update(investmentRef, {
+        'totalPrincipalReturned': FieldValue.increment(newPayment.amount),
+        'outstandingBalance': FieldValue.increment(-newPayment.amount),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      batch.set(
+        treasuryRef,
+        {
+          'currentBalance': FieldValue.increment(-newPayment.amount),
+          'totalReturnedToInvestors': FieldValue.increment(newPayment.amount),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
+  }
+
   /// Marca una inversión como completada (todo el capital fue devuelto).
   Future<void> completeInvestment(String investmentId) async {
     await _db.collection('investments').doc(investmentId).update({
