@@ -78,6 +78,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
   // Filtro de periodos en la Caja General
   String _selectedCajaPeriod = 'Historico'; // 'Historico', 'Este Mes', 'Mes Pasado', 'Personalizado'
   DateTimeRange? _customCajaRange;
+  bool _isSyncingFinance = false;
 
   DateTimeRange? _resolveCajaDateRange() {
     final now = DateTime.now();
@@ -975,57 +976,121 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
     );
   }
 
-  // ─── RECÁLCULO DE TESORERÍA ────────────────────────────────────────────
-  Future<void> _calculateInitialTreasury() async {
+  // ─── RECÁLCULO Y SANEAMIENTO DE TESORERÍA Y FINANZAS ────────────────────
+  Future<void> _recalculateAndSyncAllFinance() async {
+    setState(() => _isSyncingFinance = true);
     try {
       final db = ref.read(firestoreServiceProvider);
-      final credits = await db.getAllCreditsStream().first;
-      final payments = await db.getAllPaymentsStream().first;
+      
+      // 1. Obtener todas las inversiones
       final investments = await db.getInvestmentsStream().first;
+      
+      // 2. Corregir y recalcular cada inversión basándose en sus pagos reales
+      for (var inv in investments) {
+        final payments = await db.getInvestorPaymentsStream(inv.investmentId).first;
+        
+        double totalInterestPaid = 0;
+        double totalPrincipalReturned = 0;
+        
+        for (var p in payments) {
+          if (p.concept == InvestorPaymentConcept.interestPayment) {
+            totalInterestPaid += p.amount;
+          } else {
+            totalPrincipalReturned += p.amount;
+          }
+        }
+        
+        final double outstandingBalance = (inv.amount - totalPrincipalReturned).clamp(0.0, double.infinity);
+        final isCompleted = outstandingBalance == 0 && totalPrincipalReturned > 0;
+        
+        // Actualizar el documento de la inversión con los valores corregidos
+        await FirebaseFirestore.instance.collection('investments').doc(inv.investmentId).update({
+          'totalInterestPaid': totalInterestPaid,
+          'totalPrincipalReturned': totalPrincipalReturned,
+          'outstandingBalance': outstandingBalance,
+          'status': isCompleted ? 'completed' : 'active',
+          'updatedAt': Timestamp.fromDate(DateTime.now()),
+        });
+      }
+      
+      // 3. Volver a leer inversiones actualizadas
+      final updatedInvestments = await db.getInvestmentsStream().first;
+      
+      // 4. Recalcular la tesorería global (caja actual, etc.)
+      final credits = await db.getAllCreditsStream().first;
+      final clientPayments = await db.getAllPaymentsStream().first;
+      final expenses = await db.getExpensesStream().first;
       
       double initialBalance = 0;
       double interests = 0;
       double mora = 0;
       
-      for (var pay in payments) {
+      // Sumar cobros a clientes
+      for (var pay in clientPayments) {
         initialBalance += pay.amountReceived;
         interests += pay.appliedToInterest;
         mora += pay.appliedToMora;
       }
+      
+      // Restar préstamos otorgados
       for (var cred in credits) {
         initialBalance -= cred.principalAmount;
       }
 
-      // Sumar inversiones recibidas
+      // Sumar inversiones recibidas y restar devoluciones e intereses pagados a inversores
       double totalInvested = 0;
       double totalReturnedPrincipal = 0;
       double totalPaidInterestInv = 0;
-      for (var inv in investments) {
+      for (var inv in updatedInvestments) {
         totalInvested += inv.amount;
         totalReturnedPrincipal += inv.totalPrincipalReturned;
         totalPaidInterestInv += inv.totalInterestPaid;
       }
+      
+      // Restar gastos operativos
+      double totalExpenses = 0;
+      for (var exp in expenses) {
+        initialBalance -= exp.amount;
+        totalExpenses += exp.amount;
+      }
+      
+      // Saldo de caja final
       initialBalance += totalInvested - totalReturnedPrincipal - totalPaidInterestInv;
+      
+      // Sumar o restar ajustes manuales de caja
+      final adjustments = await db.getCashAdjustmentsStream().first;
+      for (var adj in adjustments) {
+        initialBalance += adj.amount;
+      }
 
       final Map<String, dynamic> updateData = {
         'currentBalance': initialBalance,
         'totalInterestsEarned': interests,
         'totalMoraEarned': mora,
+        'totalExpenses': totalExpenses,
         'totalInvestmentsReceived': totalInvested,
         'totalReturnedToInvestors': totalReturnedPrincipal,
         'totalInterestPaidToInvestors': totalPaidInterestInv,
-        'lastUpdated': DateTime.now().toIso8601String(),
+        'lastUpdated': FieldValue.serverTimestamp(),
       };
       
       await FirebaseFirestore.instance.collection('treasury').doc('main').set(updateData, SetOptions(merge: true));
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Tesorería sincronizada con el historial completo')),
+          const SnackBar(content: Text('Sincronización y reconstrucción financiera completada correctamente.')),
         );
       }
     } catch (e) {
-      debugPrint(e.toString());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error al sincronizar: $e'), backgroundColor: AppTheme.errorColor),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSyncingFinance = false);
+      }
     }
   }
 
@@ -1429,6 +1494,24 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
                     ],
                   ),
                 ),
+                // Botón de Saneamiento / Sincronización
+                OutlinedButton.icon(
+                  onPressed: _isSyncingFinance ? null : _recalculateAndSyncAllFinance,
+                  icon: _isSyncingFinance
+                      ? const SizedBox(
+                          width: 14,
+                          height: 14,
+                          child: CircularProgressIndicator(strokeWidth: 1.5, color: Colors.blueAccent),
+                        )
+                      : const Icon(Icons.sync, size: 18),
+                  label: const Text('Sincronizar', style: TextStyle(fontSize: 12)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Colors.blueAccent,
+                    side: const BorderSide(color: Colors.blueAccent),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  ),
+                ),
+                const SizedBox(width: 8),
                 // Botón de Ajuste Manual
                 OutlinedButton.icon(
                   onPressed: _showCashAdjustmentDialog,
