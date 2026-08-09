@@ -1,3 +1,4 @@
+import 'package:finanzas_app/core/repositories/credits_repository.dart';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -132,7 +133,7 @@ class _DisbursementsReportScreenState extends ConsumerState<DisbursementsReportS
 
   @override
   Widget build(BuildContext context) {
-    final creditsAsync = ref.watch(firestoreServiceProvider).getAllCreditsStream();
+    final creditsAsync = ref.watch(creditsRepositoryProvider).getAllCreditsStream();
 
     return StreamBuilder<List<CreditModel>>(
       stream: creditsAsync,

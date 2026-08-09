@@ -1,4 +1,8 @@
+import 'package:finanzas_app/core/enums/user_role.dart';
 import 'package:flutter/material.dart';
+import '../../core/repositories/treasury_repository.dart';
+import '../../core/repositories/users_repository.dart';
+
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -129,7 +133,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
     if (!_expenseFormKey.currentState!.validate()) return;
     setState(() => _isSavingExpense = true);
     try {
-      final user = await ref.read(firestoreServiceProvider).getUser(ref.read(authServiceProvider).currentUser!.uid);
+      final user = await ref.read(usersRepositoryProvider).getUser(ref.read(authServiceProvider).currentUser!.uid);
       final expense = ExpenseModel(
         expenseId: '',
         amount: double.parse(_expenseAmountController.text.replaceAll(',', '')),
@@ -138,7 +142,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
         date: _expenseDate,
         createdBy: user?.displayName ?? 'Admin',
       );
-      await ref.read(firestoreServiceProvider).registerExpenseTransaction(expense);
+      await ref.read(treasuryRepositoryProvider).registerExpenseTransaction(expense);
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gasto registrado exitosamente')));
@@ -165,7 +169,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
         createdBy: oldExp.createdBy,
       );
 
-      await ref.read(firestoreServiceProvider).updateExpense(oldExp, updatedExp);
+      await ref.read(treasuryRepositoryProvider).updateExpense(oldExp, updatedExp);
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Gasto actualizado exitosamente')));
@@ -198,7 +202,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
 
     if (confirm == true) {
       try {
-        await ref.read(firestoreServiceProvider).deleteExpense(exp.expenseId, exp.amount);
+        await ref.read(treasuryRepositoryProvider).deleteExpense(exp.expenseId, exp.amount);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Gasto eliminado correctamente')),
@@ -374,7 +378,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
         createdAt: _investmentDate,
         updatedAt: _investmentDate,
       );
-      await ref.read(firestoreServiceProvider).registerInvestmentTransaction(investment);
+      await ref.read(treasuryRepositoryProvider).registerInvestmentTransaction(investment);
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Inversión registrada exitosamente')));
@@ -413,7 +417,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
         updatedAt: DateTime.now(),
       );
 
-      await ref.read(firestoreServiceProvider).updateInvestment(oldInv, updatedInv);
+      await ref.read(treasuryRepositoryProvider).updateInvestment(oldInv, updatedInv);
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Inversión actualizada exitosamente')));
@@ -446,7 +450,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
 
     if (confirm == true) {
       try {
-        await ref.read(firestoreServiceProvider).deleteInvestment(inv.investmentId, inv.amount);
+        await ref.read(treasuryRepositoryProvider).deleteInvestment(inv.investmentId, inv.amount);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Inversión eliminada correctamente')),
@@ -581,7 +585,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
         paymentDate: _investorPaymentDate,
         createdAt: DateTime.now(),
       );
-      await ref.read(firestoreServiceProvider).registerInvestorPaymentTransaction(
+      await ref.read(treasuryRepositoryProvider).registerInvestorPaymentTransaction(
         investmentId: investmentId,
         payment: payment,
       );
@@ -700,7 +704,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
             elevation: 0,
             title: Text(inv.investorName),
             content: StreamBuilder<List<InvestorPaymentModel>>(
-              stream: ref.read(firestoreServiceProvider).getInvestorPaymentsStream(inv.investmentId),
+              stream: ref.read(treasuryRepositoryProvider).getInvestorPaymentsStream(inv.investmentId),
               builder: (context, snap) {
                 final payments = snap.data ?? [];
                 return SingleChildScrollView(
@@ -816,7 +820,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
                 onPressed: () async {
                   Navigator.pop(context);
                   try {
-                    await ref.read(firestoreServiceProvider).deleteInvestorPaymentTransaction(
+                    await ref.read(treasuryRepositoryProvider).deleteInvestorPaymentTransaction(
                       investmentId: inv.investmentId,
                       payment: payment,
                     );
@@ -932,7 +936,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
                         createdAt: payment.createdAt,
                       );
 
-                      await ref.read(firestoreServiceProvider).updateInvestorPaymentTransaction(
+                      await ref.read(treasuryRepositoryProvider).updateInvestorPaymentTransaction(
                         investmentId: investment.investmentId,
                         oldPayment: payment,
                         newPayment: newPayment,
@@ -1099,7 +1103,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
     if (!_adjustFormKey.currentState!.validate()) return;
     setState(() => _isSavingAdjustment = true);
     try {
-      final user = await ref.read(firestoreServiceProvider).getUser(ref.read(authServiceProvider).currentUser!.uid);
+      final user = await ref.read(usersRepositoryProvider).getUser(ref.read(authServiceProvider).currentUser!.uid);
       final rawAmount = double.parse(_adjustAmountController.text.replaceAll(',', ''));
       final finalAmount = _isAdjustmentPositive ? rawAmount : -rawAmount;
 
@@ -1111,7 +1115,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
         createdBy: user?.displayName ?? 'Admin',
         createdAt: DateTime.now(),
       );
-      await ref.read(firestoreServiceProvider).registerCashAdjustment(adjustment);
+      await ref.read(treasuryRepositoryProvider).registerCashAdjustment(adjustment);
       if (mounted) {
         Navigator.pop(context);
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ajuste de caja registrado exitosamente')));
@@ -1269,7 +1273,7 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
 
     if (confirm == true) {
       try {
-        await ref.read(firestoreServiceProvider).deleteCashAdjustment(adj.adjustmentId, adj.amount);
+        await ref.read(treasuryRepositoryProvider).deleteCashAdjustment(adj.adjustmentId, adj.amount);
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Ajuste de caja eliminado correctamente')),
@@ -1348,14 +1352,12 @@ class _TreasuryScreenState extends ConsumerState<TreasuryScreen> with SingleTick
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (creditsAsync.hasError ||
-        paymentsAsync.hasError ||
-        investmentsAsync.hasError ||
-        expensesAsync.hasError ||
-        investorPaymentsAsync.hasError ||
-        adjustmentsAsync.hasError) {
-      return const Center(child: Text('Error al cargar datos financieros.'));
-    }
+    if (creditsAsync.hasError) return Center(child: Text('Error en Créditos: ${creditsAsync.error}'));
+    if (paymentsAsync.hasError) return Center(child: Text('Error en Pagos: ${paymentsAsync.error}'));
+    if (investmentsAsync.hasError) return Center(child: Text('Error en Inversiones: ${investmentsAsync.error}'));
+    if (expensesAsync.hasError) return Center(child: Text('Error en Gastos: ${expensesAsync.error}'));
+    if (investorPaymentsAsync.hasError) return Center(child: Text('Error en Pagos a Inversores: ${investorPaymentsAsync.error}'));
+    if (adjustmentsAsync.hasError) return Center(child: Text('Error en Ajustes: ${adjustmentsAsync.error}'));
 
     final credits = creditsAsync.value ?? [];
     final payments = paymentsAsync.value ?? [];

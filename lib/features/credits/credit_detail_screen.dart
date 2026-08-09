@@ -1,3 +1,8 @@
+import 'package:finanzas_app/core/repositories/payments_repository.dart';
+import 'package:finanzas_app/core/repositories/credits_repository.dart';
+import 'package:finanzas_app/core/enums/user_role.dart';
+import 'package:finanzas_app/core/enums/payment_frequency.dart';
+import 'package:finanzas_app/core/enums/credit_status.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -18,12 +23,12 @@ import 'package:google_fonts/google_fonts.dart';
 
 // Stream de las cuotas del crédito
 final installmentsProvider = StreamProvider.family<List<InstallmentModel>, String>((ref, creditId) {
-  return ref.read(firestoreServiceProvider).getInstallmentsStream(creditId);
+  return ref.read(creditsRepositoryProvider).getInstallmentsStream(creditId);
 });
 
 // Stream de los pagos del crédito
 final paymentsProvider = StreamProvider.family<List<PaymentModel>, String>((ref, creditId) {
-  return ref.read(firestoreServiceProvider).getPaymentsStream(creditId);
+  return ref.read(paymentsRepositoryProvider).getPaymentsStream(creditId);
 });
 
 class CreditDetailScreen extends ConsumerWidget {
@@ -48,7 +53,7 @@ class CreditDetailScreen extends ConsumerWidget {
     );
     
     // Obtenemos el stream de créditos del cliente para buscar este crédito específico
-    final clientCreditsAsync = ref.watch(firestoreServiceProvider).getClientCreditsStream(clientId);
+    final clientCreditsAsync = ref.watch(creditsRepositoryProvider).getClientCreditsStream(clientId);
     final copFormatter = NumberFormat.currency(locale: 'es_CO', symbol: '\$', decimalDigits: 0);
     final size = MediaQuery.of(context).size;
     final isWide = size.width > 900;
@@ -114,10 +119,16 @@ class CreditDetailScreen extends ConsumerWidget {
             body: Center(child: CircularProgressIndicator()),
           );
         }
-        if (snapshot.hasError || !snapshot.hasData || snapshot.data!.isEmpty) {
+        if (snapshot.hasError) {
           return Scaffold(
             appBar: AppBar(title: const Text('Detalle de Crédito')),
-            body: const Center(child: Text('Error al cargar detalles del crédito o el crédito no existe.')),
+            body: Center(child: Padding(padding: const EdgeInsets.all(16), child: Text('Error al cargar créditos: ${snapshot.error}', style: const TextStyle(color: Colors.red)))),
+          );
+        }
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Detalle de Crédito')),
+            body: const Center(child: Text('El crédito no existe o fue eliminado.')),
           );
         }
 
@@ -196,7 +207,7 @@ class CreditDetailScreen extends ConsumerWidget {
                           const SnackBar(content: Text('Eliminando crédito...'))
                         );
                       }
-                      await ref.read(firestoreServiceProvider).deleteCredit(credit.creditId);
+                      await ref.read(creditsRepositoryProvider).deleteCredit(credit.creditId);
                       if (context.mounted) {
                         Navigator.pop(context);
                       }
@@ -839,20 +850,39 @@ class CreditDetailScreen extends ConsumerWidget {
                                           fontSize: 13,
                                         ),
                                       ),
-                                      const SizedBox(height: 4),
+                                      const SizedBox(height: 6),
+                                      // 1. Valor Base Original
                                       Text(
-                                        'Cap: ${copFormatter.format(inst.principalPortion)} | Int: ${copFormatter.format(inst.interestPortion)}'
-                                        '${isOverdue && inst.remainingAmount > 0 ? ' | Mora: ${copFormatter.format(inst.accumulatedMora)} ($delayDays días - ${copFormatter.format(currentDailyMora)}/día)' : inst.accumulatedMora > 0 ? ' | Mora: ${copFormatter.format(inst.accumulatedMora)}' : ''}',
+                                        'Valor Base: ${copFormatter.format(inst.scheduledAmount)} (Cap: ${copFormatter.format(inst.principalPortion)} | Int: ${copFormatter.format(inst.interestPortion)})',
                                         style: const TextStyle(color: Colors.grey, fontSize: 11),
                                       ),
+                                      // 2. Mora Generada Histórica
+                                      if (inst.accumulatedMora > 0)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 2),
+                                          child: Text(
+                                            'Mora Generada: ${copFormatter.format(inst.accumulatedMora)}'
+                                            '${isOverdue && inst.remainingAmount > 0 ? ' (+${copFormatter.format(currentDailyMora)}/día)' : ''}',
+                                            style: const TextStyle(color: Colors.orange, fontSize: 11),
+                                          ),
+                                        ),
+                                      // 3. Abonos Realizados
                                       if (inst.paidAmount > 0 || inst.moraPaid > 0)
                                         Padding(
                                           padding: const EdgeInsets.only(top: 2),
                                           child: Text(
-                                            'Abonado — Cap+Int: ${copFormatter.format(inst.paidAmount)}'
-                                            '${inst.moraPaid > 0 ? ' | Mora: ${copFormatter.format(inst.moraPaid)}' : ''}'
-                                            ' | Saldo: ${copFormatter.format(inst.remainingAmount)}',
-                                            style: TextStyle(color: theme.colorScheme.secondary, fontSize: 10, fontWeight: FontWeight.bold),
+                                            'Abonado: ${copFormatter.format(inst.paidAmount + inst.moraPaid)} (A cuota: ${copFormatter.format(inst.paidAmount)} | A mora: ${copFormatter.format(inst.moraPaid)})',
+                                            style: const TextStyle(color: Colors.green, fontSize: 11),
+                                          ),
+                                        ),
+                                      // 4. Saldo Real Pendiente (Restante)
+                                      if (inst.status != InstallmentStatus.paid)
+                                        Padding(
+                                          padding: const EdgeInsets.only(top: 4),
+                                          child: Text(
+                                            'Saldo Pendiente: ${copFormatter.format(inst.remainingAmount + (inst.accumulatedMora - inst.moraPaid))}'
+                                            '${(inst.accumulatedMora - inst.moraPaid) > 0 ? ' (Cuota: ${copFormatter.format(inst.remainingAmount)} | Mora: ${copFormatter.format(inst.accumulatedMora - inst.moraPaid)})' : ''}',
+                                            style: TextStyle(color: theme.colorScheme.error, fontSize: 12, fontWeight: FontWeight.bold),
                                           ),
                                         ),
                                     ],
@@ -969,7 +999,7 @@ class CreditDetailScreen extends ConsumerWidget {
                                                 duration: const Duration(seconds: 1),
                                               ),
                                             );
-                                            await ref.read(firestoreServiceProvider).updateInstallmentFields(
+                                            await ref.read(creditsRepositoryProvider).updateInstallmentFields(
                                               creditId,
                                               inst.installmentId,
                                               {'isMoraExempt': val},
@@ -1056,10 +1086,16 @@ class CreditDetailScreen extends ConsumerWidget {
                                               ),
                                             );
                                             if (confirm == true) {
-                                              ScaffoldMessenger.of(context).showSnackBar(
-                                                const SnackBar(content: Text('Eliminando abono y recalculando historial...'))
-                                              );
-                                              await ref.read(firestoreServiceProvider).deletePayment(creditId, pay.paymentId);
+                                              try {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  const SnackBar(content: Text('Eliminando abono y recalculando historial...'))
+                                                );
+                                                await ref.read(paymentsRepositoryProvider).deletePayment(creditId, pay.paymentId);
+                                              } catch (e) {
+                                                ScaffoldMessenger.of(context).showSnackBar(
+                                                  SnackBar(content: Text('Error al eliminar abono: $e'), backgroundColor: Colors.red)
+                                                );
+                                              }
                                             }
                                           }
                                         },
@@ -1686,7 +1722,7 @@ class CreditDetailScreen extends ConsumerWidget {
                   'paymentMethod': method.name,
                   'notes': notesController.text.trim().isNotEmpty ? notesController.text.trim() : null,
                 },
-                triggerRecalculate: true,
+                
               );
             },
             child: const Text('Guardar'),

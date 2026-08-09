@@ -1,3 +1,4 @@
+import 'package:finanzas_app/core/enums/user_role.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -529,7 +530,7 @@ class _InstallmentAlarmDialogState extends State<InstallmentAlarmDialog> {
     setState(() => _isSaving = true);
     try {
       final db = widget.ref.read(firestoreServiceProvider);
-      await db.updateInstallment(widget.creditId, widget.installment.installmentId, {
+      await db.updateInstallmentFields(widget.creditId, widget.installment.installmentId, {
         'alarmHour': _alarmTime.hour,
         'alarmMinute': _alarmTime.minute,
         'isAlarmEnabled': _isAlarmEnabled,

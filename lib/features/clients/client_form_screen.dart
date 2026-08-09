@@ -5,10 +5,11 @@ import '../../core/models/user_model.dart';
 import '../../core/services/auth_service.dart';
 import '../../core/services/firestore_service.dart';
 import '../../shared/theme/app_theme.dart';
+import '../../core/repositories/users_repository.dart';
 
 /// Proveedor para obtener el stream de cobradores
 final collectorsStreamProvider = StreamProvider<List<UserModel>>((ref) {
-  return ref.read(firestoreServiceProvider).getCollectorsStream();
+  return ref.read(usersRepositoryProvider).getCollectorsStream();
 });
 
 class ClientFormScreen extends ConsumerStatefulWidget {
@@ -53,6 +54,31 @@ class _ClientFormScreenState extends ConsumerState<ClientFormScreen> {
 
   Future<void> _saveClient() async {
     if (!_formKey.currentState!.validate()) return;
+
+    // Transferencia Destructiva: Check if any previously assigned collector was removed
+    if (widget.clientToEdit != null) {
+      final originalCollectors = widget.clientToEdit!.assignedCollectorIds;
+      final removedCollectors = originalCollectors.where((id) => !_selectedCollectorIds.contains(id)).toList();
+      
+      if (removedCollectors.isNotEmpty) {
+        final confirm = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Transferencia de Cliente'),
+            content: const Text('Estás a punto de quitar a uno o más cobradores de este cliente. Si continúas, este cliente desaparecerá de su vista y perderán acceso a su historial. ¿Deseas continuar?'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+              ElevatedButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+                child: const Text('Sí, Transferir', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        );
+        if (confirm != true) return;
+      }
+    }
 
     setState(() => _isSaving = true);
 

@@ -1,24 +1,19 @@
+import 'package:finanzas_app/core/enums/user_role.dart';
+import 'package:equatable/equatable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-enum UserRole {
-  admin,
-  cobrador;
 
-  static UserRole fromString(String role) {
-    return UserRole.values.firstWhere(
-      (e) => e.name == role.toLowerCase(),
-      orElse: () => UserRole.cobrador,
-    );
-  }
-}
 
-class UserModel {
+class UserModel extends Equatable {
   final String uid;
   final String email;
   final String displayName;
   final UserRole role;
   final List<String> assignedClientIds;
   final bool isActive;
+  final bool canViewAllClientPayments;
+  final bool canViewOtherClients;
+  final bool canViewOtherTreasury;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -29,19 +24,30 @@ class UserModel {
     required this.role,
     required this.assignedClientIds,
     required this.isActive,
+    this.canViewAllClientPayments = false,
+    this.canViewOtherClients = false,
+    this.canViewOtherTreasury = false,
     required this.createdAt,
     required this.updatedAt,
   });
 
   // Constructor para crear un UserModel desde un mapa de Firestore
   factory UserModel.fromMap(Map<String, dynamic> map, String documentId) {
+    final email = map['email'] ?? '';
+    final role = (email == 'admin@gestor.com' || map['isAdmin'] == true) 
+        ? UserRole.admin 
+        : UserRole.fromString(map['role'] ?? 'cobrador');
+
     return UserModel(
       uid: documentId,
-      email: map['email'] ?? '',
+      email: email,
       displayName: map['displayName'] ?? '',
-      role: UserRole.fromString(map['role'] ?? 'cobrador'),
+      role: role,
       assignedClientIds: List<String>.from(map['assignedClientIds'] ?? []),
       isActive: map['isActive'] ?? true,
+      canViewAllClientPayments: map['canViewAllClientPayments'] ?? false,
+      canViewOtherClients: map['canViewOtherClients'] ?? false,
+      canViewOtherTreasury: map['canViewOtherTreasury'] ?? false,
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (map['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
@@ -55,6 +61,9 @@ class UserModel {
       'role': role.name,
       'assignedClientIds': assignedClientIds,
       'isActive': isActive,
+      'canViewAllClientPayments': canViewAllClientPayments,
+      'canViewOtherClients': canViewOtherClients,
+      'canViewOtherTreasury': canViewOtherTreasury,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
     };
@@ -68,6 +77,9 @@ class UserModel {
     UserRole? role,
     List<String>? assignedClientIds,
     bool? isActive,
+    bool? canViewAllClientPayments,
+    bool? canViewOtherClients,
+    bool? canViewOtherTreasury,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -78,8 +90,14 @@ class UserModel {
       role: role ?? this.role,
       assignedClientIds: assignedClientIds ?? this.assignedClientIds,
       isActive: isActive ?? this.isActive,
+      canViewAllClientPayments: canViewAllClientPayments ?? this.canViewAllClientPayments,
+      canViewOtherClients: canViewOtherClients ?? this.canViewOtherClients,
+      canViewOtherTreasury: canViewOtherTreasury ?? this.canViewOtherTreasury,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
+
+  @override
+  List<Object?> get props => [uid, email, displayName, role, assignedClientIds, isActive, canViewAllClientPayments, canViewOtherClients, canViewOtherTreasury, createdAt, updatedAt];
 }

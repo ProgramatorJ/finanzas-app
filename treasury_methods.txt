@@ -1,0 +1,455 @@
+  Future<String> registerExpenseTransaction(ExpenseModel expense) async {
+    final docRef = _db.collection('expenses').doc();
+    final newExpense = ExpenseModel(
+      expenseId: docRef.id,
+      amount: expense.amount,
+      category: expense.category,
+      description: expense.description,
+      date: expense.date,
+      createdBy: expense.createdBy,
+    );
+    
+    final batch = _db.batch();
+    batch.set(docRef, newExpense.toMap());
+    
+    batch.set(
+      _db.collection('treasury').doc('main'), 
+      {
+        'currentBalance': FieldValue.increment(-expense.amount),
+        'totalExpenses': FieldValue.increment(expense.amount),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      }, 
+      SetOptions(merge: true),
+    );
+
+    await batch.commit();
+    return docRef.id;
+  }
+
+  Future<void> updateExpense(ExpenseModel oldExp, ExpenseModel newExp) async {
+    final batch = _db.batch();
+    final double diff = newExp.amount - oldExp.amount;
+
+    batch.set(_db.collection('expenses').doc(oldExp.expenseId), newExp.toMap());
+
+    if (diff != 0) {
+      batch.set(
+        _db.collection('treasury').doc('main'),
+        {
+          'currentBalance': FieldValue.increment(-diff),
+          'totalExpenses': FieldValue.increment(diff),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
+  }
+
+  Future<void> deleteExpense(String expenseId, double amount) async {
+    final batch = _db.batch();
+    batch.delete(_db.collection('expenses').doc(expenseId));
+
+    batch.set(
+      _db.collection('treasury').doc('main'),
+      {
+        'currentBalance': FieldValue.increment(amount),
+        'totalExpenses': FieldValue.increment(-amount),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await batch.commit();
+  }
+
+  Stream<TreasuryModel> getTreasuryStream() {
+    return _db
+        .collection('treasury')
+        .doc('main')
+        .snapshots()
+        .map((snap) {
+          if (!snap.exists || snap.data() == null) {
+            return TreasuryModel.empty();
+          }
+          return TreasuryModel.fromMap(snap.data()!);
+        });
+  }
+
+  Stream<List<ExpenseModel>> getExpensesStream() {
+    return _db
+        .collection('expenses')
+        .orderBy('date', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => ExpenseModel.fromMap(doc.data(), doc.id))
+            .toList());
+  }
+
+  Future<String> registerInvestmentTransaction(InvestmentModel investment) async {
+    final docRef = _db.collection('investments').doc();
+    final newInvestment = InvestmentModel(
+      investmentId: docRef.id,
+      investorName: investment.investorName,
+      amount: investment.amount,
+      monthlyInterestRate: investment.monthlyInterestRate,
+      totalInterestPaid: 0.0,
+      totalPrincipalReturned: 0.0,
+      outstandingBalance: investment.amount,
+      status: InvestmentStatus.active,
+      notes: investment.notes,
+      createdAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
+
+    final batch = _db.batch();
+    batch.set(docRef, newInvestment.toMap());
+
+    // Incrementar la caja con el dinero del inversor
+    batch.set(
+      _db.collection('treasury').doc('main'),
+      {
+        'currentBalance': FieldValue.increment(investment.amount),
+        'totalInvestmentsReceived': FieldValue.increment(investment.amount),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await batch.commit();
+    return docRef.id;
+  }
+
+  Future<void> updateInvestment(InvestmentModel oldInv, InvestmentModel newInv) async {
+    final batch = _db.batch();
+    final double diff = newInv.amount - oldInv.amount;
+
+    batch.set(_db.collection('investments').doc(oldInv.investmentId), newInv.toMap());
+
+    if (diff != 0) {
+      batch.set(
+        _db.collection('treasury').doc('main'),
+        {
+          'currentBalance': FieldValue.increment(diff),
+          'totalInvestmentsReceived': FieldValue.increment(diff),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
+  }
+
+  Future<void> deleteInvestment(String investmentId, double amount) async {
+    final batch = _db.batch();
+
+    // 1. Eliminar documento principal de la inversi├│n
+    batch.delete(_db.collection('investments').doc(investmentId));
+
+    double netCurrentBalanceChange = -amount;
+    double netInvestmentsReceivedChange = -amount;
+    double netInterestPaidChange = 0.0;
+    double netPrincipalReturnedChange = 0.0;
+
+    // 2. Obtener y eliminar pagos de inversores (devoluci├│n y/o intereses) asociados
+    final paymentsSnap = await _db.collection('investments').doc(investmentId).collection('investor_payments').get();
+    for (var doc in paymentsSnap.docs) {
+      batch.delete(doc.reference);
+      final data = doc.data();
+      final concept = data['concept'];
+      final payAmount = (data['amount'] as num?)?.toDouble() ?? 0.0;
+      
+      // Al eliminar un pago, reintegramos el dinero a la caja (sale menos dinero)
+      netCurrentBalanceChange += payAmount;
+      
+      if (concept == 'interestPayment') {
+        netInterestPaidChange -= payAmount;
+      } else {
+        // principalReturn
+        netPrincipalReturnedChange -= payAmount;
+      }
+    }
+
+    // 3. Ajustar el saldo de tesorer├¡a y acumulados en un ├║nico set
+    batch.set(
+      _db.collection('treasury').doc('main'),
+      {
+        'currentBalance': FieldValue.increment(netCurrentBalanceChange),
+        'totalInvestmentsReceived': FieldValue.increment(netInvestmentsReceivedChange),
+        if (netInterestPaidChange != 0)
+          'totalInterestPaidToInvestors': FieldValue.increment(netInterestPaidChange),
+        if (netPrincipalReturnedChange != 0)
+          'totalReturnedToInvestors': FieldValue.increment(netPrincipalReturnedChange),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await batch.commit();
+  }
+
+  Future<void> registerInvestorPaymentTransaction({
+    required String investmentId,
+    required InvestorPaymentModel payment,
+  }) async {
+    final payDocRef = _db.collection('investments').doc(investmentId).collection('investor_payments').doc();
+
+    final newPayment = InvestorPaymentModel(
+      paymentId: payDocRef.id,
+      investmentId: investmentId,
+      amount: payment.amount,
+      concept: payment.concept,
+      notes: payment.notes,
+      paymentDate: payment.paymentDate,
+      createdAt: DateTime.now(),
+    );
+
+    final batch = _db.batch();
+    batch.set(payDocRef, newPayment.toMap());
+
+    // Actualizar la inversi├│n seg├║n el concepto
+    final investmentRef = _db.collection('investments').doc(investmentId);
+    if (payment.concept == InvestorPaymentConcept.interestPayment) {
+      batch.update(investmentRef, {
+        'totalInterestPaid': FieldValue.increment(payment.amount),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      // Actualizar tesorer├¡a: sale dinero de la caja para intereses
+      batch.set(
+        _db.collection('treasury').doc('main'),
+        {
+          'currentBalance': FieldValue.increment(-payment.amount),
+          'totalInterestPaidToInvestors': FieldValue.increment(payment.amount),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } else {
+      // Devoluci├│n de capital
+      batch.update(investmentRef, {
+        'totalPrincipalReturned': FieldValue.increment(payment.amount),
+        'outstandingBalance': FieldValue.increment(-payment.amount),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      batch.set(
+        _db.collection('treasury').doc('main'),
+        {
+          'currentBalance': FieldValue.increment(-payment.amount),
+          'totalReturnedToInvestors': FieldValue.increment(payment.amount),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
+  }
+
+  Future<void> deleteInvestorPaymentTransaction({
+    required String investmentId,
+    required InvestorPaymentModel payment,
+  }) async {
+    final payDocRef = _db
+        .collection('investments')
+        .doc(investmentId)
+        .collection('investor_payments')
+        .doc(payment.paymentId);
+
+    final batch = _db.batch();
+    batch.delete(payDocRef);
+
+    final investmentRef = _db.collection('investments').doc(investmentId);
+    if (payment.concept == InvestorPaymentConcept.interestPayment) {
+      batch.update(investmentRef, {
+        'totalInterestPaid': FieldValue.increment(-payment.amount),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      batch.set(
+        _db.collection('treasury').doc('main'),
+        {
+          'currentBalance': FieldValue.increment(payment.amount),
+          'totalInterestPaidToInvestors': FieldValue.increment(-payment.amount),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    } else {
+      batch.update(investmentRef, {
+        'totalPrincipalReturned': FieldValue.increment(-payment.amount),
+        'outstandingBalance': FieldValue.increment(payment.amount),
+        'updatedAt': Timestamp.fromDate(DateTime.now()),
+      });
+      batch.set(
+        _db.collection('treasury').doc('main'),
+        {
+          'currentBalance': FieldValue.increment(payment.amount),
+          'totalReturnedToInvestors': FieldValue.increment(-payment.amount),
+          'lastUpdated': FieldValue.serverTimestamp(),
+        },
+        SetOptions(merge: true),
+      );
+    }
+
+    await batch.commit();
+  }
+
+  Future<void> updateInvestorPaymentTransaction({
+    required String investmentId,
+    required InvestorPaymentModel oldPayment,
+    required InvestorPaymentModel newPayment,
+  }) async {
+    final payDocRef = _db
+        .collection('investments')
+        .doc(investmentId)
+        .collection('investor_payments')
+        .doc(oldPayment.paymentId);
+
+    final batch = _db.batch();
+    batch.update(payDocRef, newPayment.toMap());
+
+    final investmentRef = _db.collection('investments').doc(investmentId);
+    final treasuryRef = _db.collection('treasury').doc('main');
+
+    // Calcular diferencias para InvestmentModel
+    final double diffInterest = (newPayment.concept == InvestorPaymentConcept.interestPayment ? newPayment.amount : 0.0) -
+        (oldPayment.concept == InvestorPaymentConcept.interestPayment ? oldPayment.amount : 0.0);
+
+    final double diffPrincipal = (newPayment.concept == InvestorPaymentConcept.principalReturn ? newPayment.amount : 0.0) -
+        (oldPayment.concept == InvestorPaymentConcept.principalReturn ? oldPayment.amount : 0.0);
+
+    // Calcular diferencias para Treasury
+    final double diffCurrentBalance = oldPayment.amount - newPayment.amount;
+
+    final double diffTotalInterestPaidToInvestors = (newPayment.concept == InvestorPaymentConcept.interestPayment ? newPayment.amount : 0.0) -
+        (oldPayment.concept == InvestorPaymentConcept.interestPayment ? oldPayment.amount : 0.0);
+
+    final double diffTotalReturnedToInvestors = (newPayment.concept == InvestorPaymentConcept.principalReturn ? newPayment.amount : 0.0) -
+        (oldPayment.concept == InvestorPaymentConcept.principalReturn ? oldPayment.amount : 0.0);
+
+    // 1. Modificar Investment
+    final Map<String, dynamic> investmentUpdate = {
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    };
+    if (diffInterest != 0) {
+      investmentUpdate['totalInterestPaid'] = FieldValue.increment(diffInterest);
+    }
+    if (diffPrincipal != 0) {
+      investmentUpdate['totalPrincipalReturned'] = FieldValue.increment(diffPrincipal);
+      investmentUpdate['outstandingBalance'] = FieldValue.increment(-diffPrincipal);
+    }
+    batch.update(investmentRef, investmentUpdate);
+
+    // 2. Modificar Treasury
+    final Map<String, dynamic> treasuryUpdate = {
+      'lastUpdated': FieldValue.serverTimestamp(),
+    };
+    if (diffCurrentBalance != 0) {
+      treasuryUpdate['currentBalance'] = FieldValue.increment(diffCurrentBalance);
+    }
+    if (diffTotalInterestPaidToInvestors != 0) {
+      treasuryUpdate['totalInterestPaidToInvestors'] = FieldValue.increment(diffTotalInterestPaidToInvestors);
+    }
+    if (diffTotalReturnedToInvestors != 0) {
+      treasuryUpdate['totalReturnedToInvestors'] = FieldValue.increment(diffTotalReturnedToInvestors);
+    }
+    batch.set(treasuryRef, treasuryUpdate, SetOptions(merge: true));
+
+    await batch.commit();
+  }
+
+  Future<void> completeInvestment(String investmentId) async {
+    await _db.collection('investments').doc(investmentId).update({
+      'status': 'completed',
+      'outstandingBalance': 0.0,
+      'updatedAt': Timestamp.fromDate(DateTime.now()),
+    });
+  }
+
+  Stream<List<InvestmentModel>> getInvestmentsStream() {
+    return _db
+        .collection('investments')
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => InvestmentModel.fromMap(doc.data(), doc.id))
+            .toList());
+  }
+
+  Stream<List<InvestorPaymentModel>> getInvestorPaymentsStream(String investmentId) {
+    return _db
+        .collection('investments')
+        .doc(investmentId)
+        .collection('investor_payments')
+        .orderBy('paymentDate', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => InvestorPaymentModel.fromMap(doc.data(), doc.id, investmentId: investmentId))
+            .toList());
+  }
+
+  Stream<List<InvestorPaymentModel>> getAllInvestorPaymentsStream() {
+    return _db
+        .collectionGroup('investor_payments')
+        .orderBy('paymentDate', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => InvestorPaymentModel.fromMap(doc.data(), doc.id))
+            .toList());
+  }
+
+  Future<String> registerCashAdjustment(CashAdjustmentModel adjustment) async {
+    final docRef = _db.collection('cash_adjustments').doc();
+    final newAdj = CashAdjustmentModel(
+      adjustmentId: docRef.id,
+      amount: adjustment.amount,
+      description: adjustment.description,
+      date: adjustment.date,
+      createdBy: adjustment.createdBy,
+      createdAt: DateTime.now(),
+    );
+
+    final batch = _db.batch();
+    batch.set(docRef, newAdj.toMap());
+
+    batch.set(
+      _db.collection('treasury').doc('main'),
+      {
+        'currentBalance': FieldValue.increment(adjustment.amount),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await batch.commit();
+    return docRef.id;
+  }
+
+  Stream<List<CashAdjustmentModel>> getCashAdjustmentsStream() {
+    return _db
+        .collection('cash_adjustments')
+        .orderBy('date', descending: true)
+        .snapshots()
+        .map((snap) => snap.docs
+            .map((doc) => CashAdjustmentModel.fromMap(doc.data(), doc.id))
+            .toList());
+  }
+
+  Future<void> deleteCashAdjustment(String adjustmentId, double amount) async {
+    final docRef = _db.collection('cash_adjustments').doc(adjustmentId);
+    final batch = _db.batch();
+    batch.delete(docRef);
+
+    batch.set(
+      _db.collection('treasury').doc('main'),
+      {
+        'currentBalance': FieldValue.increment(-amount),
+        'lastUpdated': FieldValue.serverTimestamp(),
+      },
+      SetOptions(merge: true),
+    );
+
+    await batch.commit();
+  }
+

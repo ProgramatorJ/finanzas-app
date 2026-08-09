@@ -1,6 +1,7 @@
+import 'package:equatable/equatable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class ClientModel {
+class ClientModel extends Equatable {
   final String clientId;
   final String fullName;
   final String idNumber;
@@ -79,4 +80,7 @@ class ClientModel {
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
+
+  @override
+  List<Object?> get props => [clientId, fullName, idNumber, phone, address, assignedCollectorIds, createdByUid, isActive, createdAt, updatedAt];
 }

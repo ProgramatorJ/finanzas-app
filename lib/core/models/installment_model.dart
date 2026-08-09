@@ -1,3 +1,4 @@
+import 'package:equatable/equatable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum InstallmentStatus {
@@ -15,7 +16,7 @@ enum InstallmentStatus {
   }
 }
 
-class InstallmentModel {
+class InstallmentModel extends Equatable {
   final String installmentId;
   final String? creditId;
   final int installmentNumber;
@@ -201,4 +202,7 @@ class InstallmentModel {
       isMoraExempt: isMoraExempt ?? this.isMoraExempt,
     );
   }
+
+  @override
+  List<Object?> get props => [installmentId, creditId, installmentNumber, dueDate, principalPortion, interestPortion, scheduledAmount, status, paidAmount, remainingAmount, isMoraActive, moraStartDate, dailyMoraRate, moraBase, accumulatedMora, moraPaid, isMoraExempt, isConsolidated, consolidatedIntoInstallment, consolidationDate, createdAt, updatedAt, alarmHour, alarmMinute, isAlarmEnabled, isAlarmSilent];
 }

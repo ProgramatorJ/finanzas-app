@@ -10,13 +10,21 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role;
     }
     function isAdmin() {
-      return isAuthenticated() && userRole() == 'admin';
+      return isAuthenticated() && 
+        (request.auth.token.email == 'admin@gestor.com' ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+          (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.email == 'admin@gestor.com' || 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' || 
+           get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isAdmin == true)));
     }
     function isCobrador() {
       return isAuthenticated() && userRole() == 'cobrador';
     }
     function isAssignedCollector(clientData) {
       return request.auth.uid in clientData.assignedCollectorIds;
+    }
+    function canViewAllClientPayments() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.canViewAllClientPayments == true;
     }
 
     // ── /users ────────────────────────────────────────────────────────
@@ -27,54 +35,63 @@ service cloud.firestore {
 
     // ── /clients ──────────────────────────────────────────────────────
     match /clients/{clientId} {
-      allow read: if isAdmin() ||
-                    (isCobrador() && isAssignedCollector(resource.data));
-      allow create, update, delete: if isAdmin();
+      allow read: if isAdmin() || (isCobrador() && isAssignedCollector(resource.data));
+      allow create, update: if isAdmin();
+      allow delete: if false; 
     }
 
     // ── /credits/{creditId} ───────────────────────────────────────────
     match /credits/{creditId} {
-      allow read: if isAuthenticated() && (isAdmin() || isCobrador());
-      allow create, delete: if isAdmin();
-      allow update: if isAdmin() ||
-                    (isCobrador() && isAssignedCollector(
-                      get(/databases/$(database)/documents/clients/$(resource.data.clientId)).data
-                    ));
+      // El cobrador solo puede leer créditos donde su UID está en assignedCollectorIds
+      allow read: if isAuthenticated() && (isAdmin() || (isCobrador() && request.auth.uid in resource.data.assignedCollectorIds));
+      allow create: if isAdmin();
+      allow delete: if false; 
+      allow update: if isAdmin() || (isCobrador() && request.auth.uid in resource.data.assignedCollectorIds);
 
       // Cuotas
       match /installments/{installmentId} {
-        allow read: if isAdmin() || isCobrador();
-        allow create, delete: if isAdmin();
-        allow update: if isAdmin() || 
-                      (isCobrador() && request.auth.uid in get(/databases/$(database)/documents/clients/$(get(/databases/$(database)/documents/credits/$(creditId)).data.clientId)).data.assignedCollectorIds);
+        allow read: if isAdmin() || (isCobrador() && request.auth.uid in get(/databases/$(database)/documents/credits/$(creditId)).data.assignedCollectorIds);
+        allow create: if isAdmin();
+        allow delete: if false; 
+        allow update: if isAdmin() || (isCobrador() && request.auth.uid in get(/databases/$(database)/documents/credits/$(creditId)).data.assignedCollectorIds);
       }
 
-      // Pagos — cobrador puede crear (registrar pago), no editar ni borrar
+      // Pagos — Reglas Locales
       match /payments/{paymentId} {
-        allow read: if isAdmin() || isCobrador();
+        allow read: if isAdmin() || 
+                    (isCobrador() && resource.data.registeredByUid == request.auth.uid) ||
+                    (isCobrador() && canViewAllClientPayments() && request.auth.uid in get(/databases/$(database)/documents/credits/$(creditId)).data.assignedCollectorIds);
         allow create: if isAdmin() || 
-                      (isCobrador() && request.auth.uid in get(/databases/$(database)/documents/clients/$(get(/databases/$(database)/documents/credits/$(creditId)).data.clientId)).data.assignedCollectorIds);
-        allow update, delete: if isAdmin();
+                      (isCobrador() && request.auth.uid in get(/databases/$(database)/documents/credits/$(creditId)).data.assignedCollectorIds);
+        allow update: if isAdmin();
+        allow delete: if isAdmin(); 
       }
     }
 
     // Regla global para consultas de grupo de colecciones (collection group queries)
     match /{path=**}/payments/{paymentId} {
-      allow read: if isAuthenticated() && (isAdmin() || isCobrador());
+      // Solo permite al cobrador leer globalmente SUS propios pagos
+      allow read: if isAuthenticated() && (isAdmin() || (isCobrador() && resource.data.registeredByUid == request.auth.uid));
       allow create: if isAuthenticated() && (isAdmin() || isCobrador());
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin(); 
     }
 
     // Regla global para consultas de grupo de cuotas (collection group queries)
     match /{path=**}/installments/{installmentId} {
-      allow read: if isAuthenticated() && (isAdmin() || isCobrador());
-      allow create, delete: if isAdmin();
-      allow update: if isAuthenticated() && (isAdmin() || isCobrador());
+      // Peligro de privacidad: Collection group de installments no se puede filtrar por cobrador fácilmente sin denormalizar.
+      // Lo bloqueamos para cobradores. Deben usar consultas locales sub-colección.
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow delete: if false; 
+      allow update: if isAdmin();
     }
 
     // ── /appointments ─────────────────────────────────────────────────
     match /appointments/{appointmentId} {
-      allow read, create, update, delete: if isAuthenticated() && (isAdmin() || isCobrador());
+      // Debería limitarse al cobrador asignado
+      allow read, create, update: if isAdmin() || (isCobrador() && resource.data.collectorId == request.auth.uid);
+      allow delete: if false; 
     }
 
     // ── /appConfig ────────────────────────────────────────────────────
@@ -86,7 +103,7 @@ service cloud.firestore {
     // ── /treasury ─────────────────────────────────────────────────────
     match /treasury/{document} {
       allow read: if isAdmin();
-      allow write: if isAuthenticated() && (isAdmin() || isCobrador());
+      allow write: if isAdmin() || isCobrador();
     }
 
     // ── /expenses ─────────────────────────────────────────────────────

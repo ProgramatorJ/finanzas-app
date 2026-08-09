@@ -1,4 +1,5 @@
-class TreasuryModel {
+import 'package:equatable/equatable.dart';
+class TreasuryModel extends Equatable {
   final double currentBalance;
   final double totalExpenses;
   final double totalInterestsEarned;
@@ -59,4 +60,29 @@ class TreasuryModel {
       lastUpdated: DateTime.now(),
     );
   }
+
+
+  TreasuryModel copyWith({
+    double? currentBalance,
+    double? totalExpenses,
+    double? totalInterestsEarned,
+    double? totalMoraEarned,
+    double? totalInvestmentsReceived,
+    double? totalReturnedToInvestors,
+    double? totalInterestPaidToInvestors,
+    DateTime? lastUpdated
+  }) {
+    return TreasuryModel(
+      currentBalance: currentBalance ?? this.currentBalance,
+      totalExpenses: totalExpenses ?? this.totalExpenses,
+      totalInterestsEarned: totalInterestsEarned ?? this.totalInterestsEarned,
+      totalMoraEarned: totalMoraEarned ?? this.totalMoraEarned,
+      totalInvestmentsReceived: totalInvestmentsReceived ?? this.totalInvestmentsReceived,
+      totalReturnedToInvestors: totalReturnedToInvestors ?? this.totalReturnedToInvestors,
+      totalInterestPaidToInvestors: totalInterestPaidToInvestors ?? this.totalInterestPaidToInvestors,
+      lastUpdated: lastUpdated ?? this.lastUpdated
+    );
+  }
+  @override
+  List<Object?> get props => [currentBalance, totalExpenses, totalInterestsEarned, totalMoraEarned, totalInvestmentsReceived, totalReturnedToInvestors, totalInterestPaidToInvestors, lastUpdated];
 }

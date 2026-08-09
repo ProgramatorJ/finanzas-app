@@ -1,3 +1,4 @@
+import 'package:equatable/equatable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum AppointmentType {
@@ -12,7 +13,7 @@ enum AppointmentType {
   }
 }
 
-class AppointmentModel {
+class AppointmentModel extends Equatable {
   final String appointmentId;
   final String clientId;
   final String clientName;
@@ -69,4 +70,35 @@ class AppointmentModel {
       'updatedAt': Timestamp.fromDate(updatedAt),
     };
   }
+
+
+  AppointmentModel copyWith({
+    String? appointmentId,
+    String? clientId,
+    String? clientName,
+    String? collectorUid,
+    DateTime? scheduledTime,
+    AppointmentType? type,
+    String? notes,
+    bool? isCompleted,
+    String? creditId,
+    DateTime? createdAt,
+    DateTime? updatedAt
+  }) {
+    return AppointmentModel(
+      appointmentId: appointmentId ?? this.appointmentId,
+      clientId: clientId ?? this.clientId,
+      clientName: clientName ?? this.clientName,
+      collectorUid: collectorUid ?? this.collectorUid,
+      scheduledTime: scheduledTime ?? this.scheduledTime,
+      type: type ?? this.type,
+      notes: notes ?? this.notes,
+      isCompleted: isCompleted ?? this.isCompleted,
+      creditId: creditId ?? this.creditId,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt
+    );
+  }
+  @override
+  List<Object?> get props => [appointmentId, clientId, clientName, collectorUid, scheduledTime, type, notes, isCompleted, creditId, createdAt, updatedAt];
 }

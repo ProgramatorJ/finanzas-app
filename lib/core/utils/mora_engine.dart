@@ -57,7 +57,8 @@ class MoraEngine {
         continue;
       }
 
-      final DateTime start = inst.moraStartDate ?? inst.dueDate;
+      final DateTime startRaw = inst.moraStartDate ?? inst.dueDate;
+      final DateTime start = startRaw.isBefore(inst.dueDate) ? inst.dueDate : startRaw;
       final DateTime startNormalized = DateTime(start.year, start.month, start.day);
       final instDueNormalized = DateTime(inst.dueDate.year, inst.dueDate.month, inst.dueDate.day);
 
@@ -72,9 +73,7 @@ class MoraEngine {
           final int days = targetNormalized.difference(startNormalized).inDays;
           if (days > 0) {
             final double additionalMora = base * dailyMoraRate * days;
-            newAccMora = start.isAfter(inst.dueDate)
-                ? inst.moraPaid + additionalMora
-                : additionalMora;
+            newAccMora = inst.accumulatedMora + additionalMora;
             isMoraActive = true;
           }
         }
@@ -102,6 +101,17 @@ class MoraEngine {
     required double paymentAmount,
     required DateTime paymentDate,
   }) {
+    final double totalDebt = currentInstallments.fold(0.0, (sum, inst) {
+      if (inst.status == InstallmentStatus.paid || inst.remainingAmount <= 0) return sum;
+      final double unpaidMora = inst.isMoraExempt ? 0.0 : (inst.accumulatedMora - inst.moraPaid).clamp(0.0, double.infinity);
+      return sum + inst.remainingAmount + unpaidMora;
+    });
+
+    // Si el abono es ligeramente mayor, simplemente lo consumimos hasta totalDebt y el resto se ignora
+    if (paymentAmount > totalDebt + 0.01) {
+      print('Aviso: El abono ($paymentAmount) supera la deuda total calculada ($totalDebt). Se aplicará hasta saldar.');
+    }
+
     // Clonar y ordenar cuotas
     final list = currentInstallments.map((e) => _cloneInstallment(e)).toList();
     list.sort((a, b) => a.installmentNumber.compareTo(b.installmentNumber));
@@ -240,7 +250,7 @@ class MoraEngine {
           inst,
           status: newStatus,
           updatedAt: paymentDate,
-          moraStartDate: modifiedCapInt ? paymentDate : inst.moraStartDate,
+          moraStartDate: paymentDate,
         );
       }
     }

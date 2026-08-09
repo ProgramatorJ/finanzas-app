@@ -1,0 +1,263 @@
+  Future<void> autoScanMora() async {
+    debugPrint('[AutoScan] Iniciando esc├íner de mora...');
+    try {
+      final creditsSnap = await _db
+          .collection(AppConstants.creditsCollection)
+          .where('status', isEqualTo: CreditStatus.active.name)
+          .get();
+
+      for (final doc in creditsSnap.docs) {
+        final credit = CreditModel.fromMap(doc.data(), doc.id);
+        
+        // Buscar las cuotas pendientes del cr├®dito
+        final instSnap = await _db
+            .collection(AppConstants.creditsCollection)
+            .doc(credit.creditId)
+            .collection(AppConstants.installmentsSubCollection)
+            .where('status', isEqualTo: InstallmentStatus.pending.name)
+            .get();
+
+        bool needsRecalculation = false;
+        final now = DateTime.now();
+        for (final iDoc in instSnap.docs) {
+          final inst = InstallmentModel.fromMap(iDoc.data(), iDoc.id, creditId: credit.creditId);
+          // Verificar si la fecha de vencimiento ya pas├│ (inicio del d├¡a)
+          final dueDate = DateTime(inst.dueDate.year, inst.dueDate.month, inst.dueDate.day);
+          final today = DateTime(now.year, now.month, now.day);
+          if (today.isAfter(dueDate)) {
+            needsRecalculation = true;
+            break; // Si hay al menos una cuota vencida, se recalcula todo el cr├®dito
+          }
+        }
+
+        if (needsRecalculation) {
+          debugPrint('[AutoScan] Cr├®dito ${credit.creditId} necesita rec├ílculo de mora.');
+          await recalculateCreditHistory(credit.creditId);
+    await recalculateCreditHistory(creditId);
+      await recalculateCreditHistory(creditId);
+  Future<void> recalculateCreditHistory(String creditId) async {
+    debugPrint('[Recalculate] Iniciando rec├ílculo del cr├®dito: $creditId');
+    final creditRef = _db.collection(AppConstants.creditsCollection).doc(creditId);
+    final installmentsRef = creditRef.collection(AppConstants.installmentsSubCollection);
+    final paymentsRef = creditRef.collection(AppConstants.paymentsSubCollection);
+
+    // 1. Leer el cr├®dito
+    final creditDoc = await creditRef.get();
+    if (!creditDoc.exists || creditDoc.data() == null) return;
+    final credit = CreditModel.fromMap(creditDoc.data()!, creditDoc.id);
+
+    final batch = _db.batch();
+
+    // 2. Leer todas las cuotas actuales
+    final instSnap = await installmentsRef.get();
+    final List<InstallmentModel> dbInstallments = instSnap.docs
+        .map((doc) => InstallmentModel.fromMap(doc.data(), doc.id))
+        .toList();
+
+    // Ajustar cantidad de cuotas si cambi├│ en el cr├®dito
+    final int diff = credit.numberOfInstallments - dbInstallments.length;
+    if (diff > 0) {
+      for (int i = 0; i < diff; i++) {
+        final newDocRef = installmentsRef.doc();
+        final newNumber = dbInstallments.length + 1;
+        final newInst = InstallmentModel(
+          installmentId: newDocRef.id,
+          installmentNumber: newNumber,
+          dueDate: credit.firstInstallmentDate,
+          principalPortion: 0.0,
+          interestPortion: 0.0,
+          scheduledAmount: 0.0,
+          status: InstallmentStatus.pending,
+          paidAmount: 0.0,
+          remainingAmount: 0.0,
+          isMoraActive: false,
+          moraStartDate: credit.firstInstallmentDate,
+          dailyMoraRate: credit.dailyMoraRate,
+          moraBase: 0.0,
+          accumulatedMora: 0.0,
+          moraPaid: 0.0,
+          isConsolidated: false,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+        dbInstallments.add(newInst);
+      }
+    } else if (diff < 0) {
+      dbInstallments.sort((a, b) => a.installmentNumber.compareTo(b.installmentNumber));
+      final int excessCount = diff.abs();
+      for (int i = 0; i < excessCount; i++) {
+        final instToDelete = dbInstallments.removeLast();
+        batch.delete(installmentsRef.doc(instToDelete.installmentId));
+      }
+    }
+
+    dbInstallments.sort((a, b) => a.installmentNumber.compareTo(b.installmentNumber));
+
+    // Generar nuevas fechas de vencimiento
+    final List<DateTime> newDueDates = CommercialCalendar.generateInstallmentDates(
+      firstInstallmentDate: credit.firstInstallmentDate,
+      numberOfInstallments: dbInstallments.length,
+      frequency: credit.paymentFrequency.name,
+    );
+
+    // Calcular porciones recalculadas
+    final double stdInstallmentAmount = credit.installmentAmount;
+    final double stdPrincipalPortion = dbInstallments.isNotEmpty
+        ? (credit.principalAmount / dbInstallments.length).ceilToDouble()
+        : 0.0;
+    final double stdInterestPortion = stdInstallmentAmount - stdPrincipalPortion;
+
+    double accumulatedPrincipal = 0.0;
+    double accumulatedInterest = 0.0;
+
+    // 3. Restablecer cada cuota a su estado original (saldo completo, sin pagos, sin mora activa)
+    final List<InstallmentModel> resetInstallments = [];
+    for (int i = 0; i < dbInstallments.length; i++) {
+      final inst = dbInstallments[i];
+      final isLast = (i == dbInstallments.length - 1);
+      
+      double currentPrincipal;
+      double currentInterest;
+      double currentScheduled;
+
+      if (isLast) {
+        currentPrincipal = (credit.principalAmount - accumulatedPrincipal).clamp(0.0, double.infinity);
+        currentInterest = (credit.totalAmount - credit.principalAmount - accumulatedInterest).clamp(0.0, double.infinity);
+        currentScheduled = currentPrincipal + currentInterest;
+      } else {
+        currentPrincipal = stdPrincipalPortion;
+        currentInterest = stdInterestPortion;
+        currentScheduled = stdInstallmentAmount;
+
+        accumulatedPrincipal += currentPrincipal;
+        accumulatedInterest += currentInterest;
+      }
+
+      final DateTime newDueDate = i < newDueDates.length ? newDueDates[i] : inst.dueDate;
+
+      resetInstallments.add(InstallmentModel(
+        installmentId: inst.installmentId,
+        installmentNumber: inst.installmentNumber,
+        dueDate: newDueDate,
+        principalPortion: currentPrincipal,
+        interestPortion: currentInterest,
+        scheduledAmount: currentScheduled,
+        status: InstallmentStatus.pending,
+        paidAmount: 0.0,
+        remainingAmount: currentScheduled,
+        isMoraActive: false,
+        moraStartDate: newDueDate,
+        dailyMoraRate: credit.dailyMoraRate,
+        moraBase: currentScheduled,
+        accumulatedMora: 0.0,
+        moraPaid: 0.0,
+        isConsolidated: false,
+        consolidatedIntoInstallment: null,
+        consolidationDate: null,
+        createdAt: inst.createdAt,
+        updatedAt: credit.disbursementDate,
+        isMoraExempt: inst.isMoraExempt,
+      ));
+    }
+
+    // 4. Leer todos los pagos vigentes del cr├®dito, ordenados cronol├│gicamente
+    final paymentsSnap = await paymentsRef.get();
+    final List<PaymentModel> paymentsList = paymentsSnap.docs
+        .map((doc) => PaymentModel.fromMap(doc.data(), doc.id))
+        .toList();
+    paymentsList.sort((a, b) => a.paymentDate.compareTo(b.paymentDate));
+
+    // 5. Re-aplicar cascada de cada pago cronol├│gicamente en memoria
+    List<InstallmentModel> currentList = resetInstallments;
+    double totalPaid = 0.0;
+    double totalPaidPrincipal = 0.0;
+    double totalPaidInterest = 0.0;
+    double totalPaidMora = 0.0;
+
+    for (final payment in paymentsList) {
+      // Proyectar mora hasta la fecha de este pago
+      final installmentsWithMora = MoraEngine.updateMoraAndConsolidations(
+        installments: currentList,
+        dailyMoraRate: credit.dailyMoraRate,
+        targetDate: payment.paymentDate,
+      );
+
+      // Aplicar el pago en cascada
+      final cascadeResult = MoraEngine.applyPaymentCascade(
+        currentInstallments: installmentsWithMora,
+        paymentAmount: payment.amountReceived,
+        paymentDate: payment.paymentDate,
+      );
+
+      currentList = cascadeResult.updatedInstallments;
+
+      // Actualizar el documento del abono en Firestore con los nuevos breakdowns del rec├ílculo
+      final double actualApplied = payment.amountReceived - cascadeResult.remainingPayment;
+      final updatedPayment = PaymentModel(
+        paymentId: payment.paymentId,
+        registeredByUid: payment.registeredByUid,
+        paymentDate: payment.paymentDate,
+        amountReceived: payment.amountReceived,
+        appliedToMora: cascadeResult.totalAppliedToMora,
+        appliedToInterest: cascadeResult.totalAppliedToInterest,
+        appliedToPrincipal: cascadeResult.totalAppliedToPrincipal,
+        affectedInstallmentNumbers: cascadeResult.affectedInstallmentNumbers,
+        installmentBreakdowns: cascadeResult.installmentBreakdowns,
+        paymentMethod: payment.paymentMethod,
+        receiptNumber: payment.receiptNumber,
+        notes: payment.notes,
+        createdAt: payment.createdAt,
+      );
+      
+      batch.set(paymentsRef.doc(payment.paymentId), updatedPayment.toMap());
+
+      totalPaid += actualApplied;
+      totalPaidPrincipal += cascadeResult.totalAppliedToPrincipal;
+      totalPaidInterest += cascadeResult.totalAppliedToInterest;
+      totalPaidMora += cascadeResult.totalAppliedToMora;
+    }
+
+    // Proyectar mora final hasta hoy para las cuotas restantes
+    final finalInstallments = MoraEngine.updateMoraAndConsolidations(
+      installments: currentList,
+      dailyMoraRate: credit.dailyMoraRate,
+      targetDate: DateTime.now(),
+    );
+
+    // Guardar todas las cuotas recalculadas en el batch
+    for (final inst in finalInstallments) {
+      final docRef = installmentsRef.doc(inst.installmentId);
+      batch.set(docRef, inst.toMap());
+    }
+
+    // Actualizar el balance general del cr├®dito
+    final double outstandingBalance = (credit.totalAmount - totalPaidPrincipal - totalPaidInterest).clamp(0.0, double.infinity);
+    final int paidInstallmentsCount = finalInstallments.where((i) => i.status == InstallmentStatus.paid).length;
+
+    CreditStatus newStatus = credit.status;
+    if (outstandingBalance <= 0) {
+      newStatus = CreditStatus.completed;
+    } else if (finalInstallments.any((i) => i.status == InstallmentStatus.overdue)) {
+      newStatus = CreditStatus.defaulted;
+    } else {
+      newStatus = CreditStatus.active;
+    }
+
+    final double finalAccumulatedMora = finalInstallments.fold<double>(0.0, (sum, inst) => sum + inst.accumulatedMora);
+
+    batch.update(creditRef, {
+      'totalPaid': totalPaid,
+      'totalPaidPrincipal': totalPaidPrincipal,
+      'totalPaidInterest': totalPaidInterest,
+      'totalPaidMora': totalPaidMora,
+      'outstandingBalance': outstandingBalance,
+      'paidInstallments': paidInstallmentsCount,
+      'status': newStatus.name,
+      'accumulatedMora': finalAccumulatedMora,
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+
+    // 6. Confirmar batch
+    await batch.commit();
+    debugPrint('[Recalculate] Ô£à Rec├ílculo de historial de cr├®dito completado.');
+  }

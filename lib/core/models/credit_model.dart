@@ -1,36 +1,16 @@
+import 'package:equatable/equatable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../enums/credit_status.dart';
+import '../enums/payment_frequency.dart';
 
-enum CreditStatus {
-  active,
-  completed,
-  defaulted,
-  restructured;
 
-  static CreditStatus fromString(String status) {
-    return CreditStatus.values.firstWhere(
-      (e) => e.name == status.toLowerCase(),
-      orElse: () => CreditStatus.active,
-    );
-  }
-}
 
-enum PaymentFrequency {
-  weekly,
-  biweekly,
-  monthly;
 
-  static PaymentFrequency fromString(String freq) {
-    return PaymentFrequency.values.firstWhere(
-      (e) => e.name == freq.toLowerCase(),
-      orElse: () => PaymentFrequency.monthly,
-    );
-  }
-}
-
-class CreditModel {
+class CreditModel extends Equatable {
   final String creditId;
   final String clientId;
   final String createdByUid;
+  final List<String> assignedCollectorIds;
 
   // Parámetros de crédito (Editables)
   final double principalAmount;        // Monto del capital (en centavos o unidad mínima recomendada para evitar flotantes)
@@ -68,6 +48,7 @@ class CreditModel {
     required this.creditId,
     required this.clientId,
     required this.createdByUid,
+    this.assignedCollectorIds = const [],
     required this.principalAmount,
     required this.monthlyInterestRate,
     required this.dailyMoraRate,
@@ -98,6 +79,7 @@ class CreditModel {
       creditId: documentId,
       clientId: map['clientId'] ?? '',
       createdByUid: map['createdByUid'] ?? '',
+      assignedCollectorIds: List<String>.from(map['assignedCollectorIds'] ?? []),
       principalAmount: (map['principalAmount'] as num?)?.toDouble() ?? 0.0,
       monthlyInterestRate: (map['monthlyInterestRate'] as num?)?.toDouble() ?? 0.10,
       dailyMoraRate: (map['dailyMoraRate'] as num?)?.toDouble() ?? 0.007,
@@ -128,6 +110,7 @@ class CreditModel {
     return {
       'clientId': clientId,
       'createdByUid': createdByUid,
+      'assignedCollectorIds': assignedCollectorIds,
       'principalAmount': principalAmount,
       'monthlyInterestRate': monthlyInterestRate,
       'dailyMoraRate': dailyMoraRate,
@@ -153,4 +136,67 @@ class CreditModel {
       'updatedAt': Timestamp.fromDate(updatedAt),
     };
   }
+
+
+  CreditModel copyWith({
+    String? creditId,
+    String? clientId,
+    String? createdByUid,
+    List<String>? assignedCollectorIds,
+    double? principalAmount,
+    double? monthlyInterestRate,
+    double? dailyMoraRate,
+    int? termInMonths,
+    PaymentFrequency? paymentFrequency,
+    double? totalInterest,
+    double? totalAmount,
+    double? installmentAmount,
+    int? numberOfInstallments,
+    DateTime? disbursementDate,
+    DateTime? firstInstallmentDate,
+    CreditStatus? status,
+    int? paidInstallments,
+    double? totalPaid,
+    double? totalPaidPrincipal,
+    double? totalPaidInterest,
+    double? totalPaidMora,
+    double? outstandingBalance,
+    double? currentConsolidatedDebt,
+    double? accumulatedMora,
+    String? notes,
+    DateTime? createdAt,
+    DateTime? updatedAt
+  }) {
+    return CreditModel(
+      creditId: creditId ?? this.creditId,
+      clientId: clientId ?? this.clientId,
+      createdByUid: createdByUid ?? this.createdByUid,
+      assignedCollectorIds: assignedCollectorIds ?? this.assignedCollectorIds,
+      principalAmount: principalAmount ?? this.principalAmount,
+      monthlyInterestRate: monthlyInterestRate ?? this.monthlyInterestRate,
+      dailyMoraRate: dailyMoraRate ?? this.dailyMoraRate,
+      termInMonths: termInMonths ?? this.termInMonths,
+      paymentFrequency: paymentFrequency ?? this.paymentFrequency,
+      totalInterest: totalInterest ?? this.totalInterest,
+      totalAmount: totalAmount ?? this.totalAmount,
+      installmentAmount: installmentAmount ?? this.installmentAmount,
+      numberOfInstallments: numberOfInstallments ?? this.numberOfInstallments,
+      disbursementDate: disbursementDate ?? this.disbursementDate,
+      firstInstallmentDate: firstInstallmentDate ?? this.firstInstallmentDate,
+      status: status ?? this.status,
+      paidInstallments: paidInstallments ?? this.paidInstallments,
+      totalPaid: totalPaid ?? this.totalPaid,
+      totalPaidPrincipal: totalPaidPrincipal ?? this.totalPaidPrincipal,
+      totalPaidInterest: totalPaidInterest ?? this.totalPaidInterest,
+      totalPaidMora: totalPaidMora ?? this.totalPaidMora,
+      outstandingBalance: outstandingBalance ?? this.outstandingBalance,
+      currentConsolidatedDebt: currentConsolidatedDebt ?? this.currentConsolidatedDebt,
+      accumulatedMora: accumulatedMora ?? this.accumulatedMora,
+      notes: notes ?? this.notes,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt
+    );
+  }
+  @override
+  List<Object?> get props => [creditId, clientId, createdByUid, assignedCollectorIds, principalAmount, monthlyInterestRate, dailyMoraRate, termInMonths, paymentFrequency, totalInterest, totalAmount, installmentAmount, numberOfInstallments, disbursementDate, firstInstallmentDate, status, paidInstallments, totalPaid, totalPaidPrincipal, totalPaidInterest, totalPaidMora, outstandingBalance, currentConsolidatedDebt, accumulatedMora, notes, createdAt, updatedAt];
 }

@@ -1,3 +1,7 @@
+import 'package:finanzas_app/core/repositories/credits_repository.dart';
+import 'package:finanzas_app/core/enums/user_role.dart';
+import 'package:finanzas_app/core/enums/payment_frequency.dart';
+import 'package:finanzas_app/core/enums/credit_status.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -15,17 +19,23 @@ import '../credits/credit_detail_screen.dart';
 import '../appointments/appointment_form_dialog.dart';
 import '../../core/models/appointment_model.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../core/repositories/appointments_repository.dart';
+import '../../core/repositories/clients_repository.dart';
 
 /// Stream del cliente por ID
 final clientProvider = StreamProvider.family<ClientModel?, String>((ref, clientId) {
-  return ref.read(firestoreServiceProvider).getAllClientsStream().map((list) {
-    return list.firstWhere((c) => c.clientId == clientId);
+  return ref.read(clientsRepositoryProvider).getClientsStream().map((list) {
+    try {
+      return list.firstWhere((c) => c.clientId == clientId);
+    } catch (_) {
+      return null;
+    }
   });
 });
 
 /// Stream de créditos de un cliente por ID
 final clientCreditsProvider = StreamProvider.family<List<CreditModel>, String>((ref, clientId) {
-  return ref.read(firestoreServiceProvider).getClientCreditsStream(clientId);
+  return ref.read(creditsRepositoryProvider).getClientCreditsStream(clientId);
 });
 
 /// Stream de citas activas de un cliente específico
@@ -147,7 +157,7 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
                                   const SnackBar(content: Text('Eliminando cliente...'))
                                 );
                               }
-                              await ref.read(firestoreServiceProvider).deleteClient(client.clientId);
+                              await ref.read(clientsRepositoryProvider).deleteClient(client.clientId);
                               if (context.mounted) {
                                 Navigator.pop(context);
                               }
@@ -363,7 +373,7 @@ class _ClientDetailScreenState extends ConsumerState<ClientDetailScreen> {
                               icon: Icon(Icons.check_circle_outline_rounded, color: theme.colorScheme.secondary),
                               tooltip: 'Marcar como Completada',
                               onPressed: () {
-                                ref.read(firestoreServiceProvider).updateAppointmentStatus(app.appointmentId, true);
+                                ref.read(appointmentsRepositoryProvider).updateAppointmentStatus(app.appointmentId, true);
                               },
                             ),
                           ),

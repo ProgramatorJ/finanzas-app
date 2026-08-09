@@ -1,3 +1,4 @@
+import 'package:finanzas_app/core/repositories/treasury_repository.dart';
 /// ═══════════════════════════════════════════════════════════════════════════
 /// financial_providers.dart
 /// ═══════════════════════════════════════════════════════════════════════════
@@ -25,22 +26,22 @@ import '../credits/credit_list_screen.dart'; // Para allCreditsStreamProvider
 
 /// Stream del documento principal de tesorería (resumen)
 final treasuryStreamProvider = StreamProvider<TreasuryModel>((ref) {
-  return ref.watch(firestoreServiceProvider).getTreasuryStream();
+  return ref.watch(treasuryRepositoryProvider).getTreasuryStream();
 });
 
 /// Stream de todos los gastos operativos
 final expensesStreamProvider = StreamProvider<List<ExpenseModel>>((ref) {
-  return ref.watch(firestoreServiceProvider).getExpensesStream();
+  return ref.watch(treasuryRepositoryProvider).getExpensesStream();
 });
 
 /// Stream de todas las inversiones
 final investmentsStreamProvider = StreamProvider<List<InvestmentModel>>((ref) {
-  return ref.watch(firestoreServiceProvider).getInvestmentsStream();
+  return ref.watch(treasuryRepositoryProvider).getInvestmentsStream();
 });
 
 /// Stream de todos los ajustes manuales de caja
 final cashAdjustmentsStreamProvider = StreamProvider<List<CashAdjustmentModel>>((ref) {
-  return ref.watch(firestoreServiceProvider).getCashAdjustmentsStream();
+  return ref.watch(treasuryRepositoryProvider).getCashAdjustmentsStream();
 });
 
 /// Stream consolidado de TODOS los pagos a inversores.

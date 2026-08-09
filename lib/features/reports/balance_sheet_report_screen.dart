@@ -1,3 +1,4 @@
+import 'package:finanzas_app/core/enums/user_role.dart';
 /// ═══════════════════════════════════════════════════════════════════════════
 /// balance_sheet_report_screen.dart — "Balance General"
 /// ═══════════════════════════════════════════════════════════════════════════

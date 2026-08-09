@@ -1,3 +1,4 @@
+import 'package:finanzas_app/core/enums/user_role.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -10,6 +11,7 @@ import '../../core/services/rbac_service.dart';
 import '../../shared/theme/app_theme.dart';
 import '../../shared/theme/responsive_sidebar_scaffold.dart';
 import '../clients/client_detail_screen.dart';
+import '../../core/repositories/appointments_repository.dart';
 
 /// Stream de citas unificado (según rol, cargado desde Firestore)
 final appointmentsStreamProvider = StreamProvider<List<AppointmentModel>>((ref) {
@@ -282,7 +284,7 @@ class _AppointmentsAgendaScreenState extends ConsumerState<AppointmentsAgendaScr
                         icon: const Icon(Icons.check_rounded, size: 16),
                         label: const Text('Completar'),
                         onPressed: () {
-                          ref.read(firestoreServiceProvider).updateAppointmentStatus(appointment.appointmentId, true);
+                          ref.read(appointmentsRepositoryProvider).updateAppointmentStatus(appointment.appointmentId, true);
                         },
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppTheme.secondaryColor,
@@ -295,7 +297,7 @@ class _AppointmentsAgendaScreenState extends ConsumerState<AppointmentsAgendaScr
                         icon: const Icon(Icons.replay_rounded, size: 16),
                         label: const Text('Reabrir'),
                         onPressed: () {
-                          ref.read(firestoreServiceProvider).updateAppointmentStatus(appointment.appointmentId, false);
+                          ref.read(appointmentsRepositoryProvider).updateAppointmentStatus(appointment.appointmentId, false);
                         },
                         style: TextButton.styleFrom(foregroundColor: AppTheme.warningColor),
                       ),
@@ -341,7 +343,7 @@ class _AppointmentsAgendaScreenState extends ConsumerState<AppointmentsAgendaScr
       }
       
       // Eliminar de Firestore
-      await ref.read(firestoreServiceProvider).deleteAppointment(appointment.appointmentId);
+      await ref.read(appointmentsRepositoryProvider).deleteAppointment(appointment.appointmentId);
       
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

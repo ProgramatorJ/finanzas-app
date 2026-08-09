@@ -1,3 +1,5 @@
+import 'package:equatable/equatable.dart';
+import '../enums/payment_method.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum PaymentMethod {
@@ -13,7 +15,7 @@ enum PaymentMethod {
   }
 }
 
-class PaymentModel {
+class PaymentModel extends Equatable {
   final String paymentId;
   final String? creditId;
   final String registeredByUid;
@@ -103,4 +105,39 @@ class PaymentModel {
       'createdAt': Timestamp.fromDate(createdAt),
     };
   }
+
+
+  PaymentModel copyWith({
+    String? paymentId,
+    String? creditId,
+    String? registeredByUid,
+    DateTime? paymentDate,
+    double? amountReceived,
+    double? appliedToMora,
+    double? appliedToInterest,
+    double? appliedToPrincipal,
+    List<int>? affectedInstallmentNumbers,
+    PaymentMethod? paymentMethod,
+    String? receiptNumber,
+    String? notes,
+    DateTime? createdAt
+  }) {
+    return PaymentModel(
+      paymentId: paymentId ?? this.paymentId,
+      creditId: creditId ?? this.creditId,
+      registeredByUid: registeredByUid ?? this.registeredByUid,
+      paymentDate: paymentDate ?? this.paymentDate,
+      amountReceived: amountReceived ?? this.amountReceived,
+      appliedToMora: appliedToMora ?? this.appliedToMora,
+      appliedToInterest: appliedToInterest ?? this.appliedToInterest,
+      appliedToPrincipal: appliedToPrincipal ?? this.appliedToPrincipal,
+      affectedInstallmentNumbers: affectedInstallmentNumbers ?? this.affectedInstallmentNumbers,
+      paymentMethod: paymentMethod ?? this.paymentMethod,
+      receiptNumber: receiptNumber ?? this.receiptNumber,
+      notes: notes ?? this.notes,
+      createdAt: createdAt ?? this.createdAt
+    );
+  }
+  @override
+  List<Object?> get props => [paymentId, creditId, registeredByUid, paymentDate, amountReceived, appliedToMora, appliedToInterest, appliedToPrincipal, affectedInstallmentNumbers, paymentMethod, receiptNumber, notes, createdAt];
 }

@@ -1,3 +1,4 @@
+import 'package:finanzas_app/core/enums/user_role.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/installment_model.dart';
 import '../../core/models/credit_model.dart';

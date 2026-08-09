@@ -1,3 +1,4 @@
+import 'package:finanzas_app/core/enums/user_role.dart';
 /// ═══════════════════════════════════════════════════════════════════════════
 /// profit_report_screen.dart — "Pagos y Ganancias"
 /// ═══════════════════════════════════════════════════════════════════════════

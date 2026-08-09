@@ -1,9 +1,11 @@
+import 'package:equatable/equatable.dart';
+import '../enums/adjustment_type.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 /// Modelo para ajustes manuales de caja.
 /// Permite al usuario corregir el saldo real cuando hay movimientos
 /// históricos que no fueron registrados en el sistema.
-class CashAdjustmentModel {
+class CashAdjustmentModel extends Equatable {
   final String adjustmentId;
   final double amount;          // Puede ser positivo (entrada) o negativo (salida)
   final String description;
@@ -41,4 +43,25 @@ class CashAdjustmentModel {
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
     );
   }
+
+
+  CashAdjustmentModel copyWith({
+    String? adjustmentId,
+    double? amount,
+    String? description,
+    DateTime? date,
+    String? createdBy,
+    DateTime? createdAt
+  }) {
+    return CashAdjustmentModel(
+      adjustmentId: adjustmentId ?? this.adjustmentId,
+      amount: amount ?? this.amount,
+      description: description ?? this.description,
+      date: date ?? this.date,
+      createdBy: createdBy ?? this.createdBy,
+      createdAt: createdAt ?? this.createdAt
+    );
+  }
+  @override
+  List<Object?> get props => [adjustmentId, amount, description, date, createdBy, createdAt];
 }

@@ -1,3 +1,4 @@
+import 'package:equatable/equatable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum InvestorPaymentConcept {
@@ -12,7 +13,7 @@ enum InvestorPaymentConcept {
   }
 }
 
-class InvestorPaymentModel {
+class InvestorPaymentModel extends Equatable {
   final String paymentId;
   final String investmentId;
   final double amount;
@@ -53,4 +54,27 @@ class InvestorPaymentModel {
       'createdAt': Timestamp.fromDate(createdAt),
     };
   }
+
+
+  InvestorPaymentModel copyWith({
+    String? paymentId,
+    String? investmentId,
+    double? amount,
+    InvestorPaymentConcept? concept,
+    String? notes,
+    DateTime? paymentDate,
+    DateTime? createdAt
+  }) {
+    return InvestorPaymentModel(
+      paymentId: paymentId ?? this.paymentId,
+      investmentId: investmentId ?? this.investmentId,
+      amount: amount ?? this.amount,
+      concept: concept ?? this.concept,
+      notes: notes ?? this.notes,
+      paymentDate: paymentDate ?? this.paymentDate,
+      createdAt: createdAt ?? this.createdAt
+    );
+  }
+  @override
+  List<Object?> get props => [paymentId, investmentId, amount, concept, notes, paymentDate, createdAt];
 }

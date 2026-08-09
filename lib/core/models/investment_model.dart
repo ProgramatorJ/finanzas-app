@@ -1,3 +1,4 @@
+import 'package:equatable/equatable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 enum InvestmentStatus {
@@ -12,7 +13,7 @@ enum InvestmentStatus {
   }
 }
 
-class InvestmentModel {
+class InvestmentModel extends Equatable {
   final String investmentId;
   final String investorName;
   final double amount;                    // Monto invertido originalmente
@@ -69,4 +70,35 @@ class InvestmentModel {
       'updatedAt': Timestamp.fromDate(updatedAt),
     };
   }
+
+
+  InvestmentModel copyWith({
+    String? investmentId,
+    String? investorName,
+    double? amount,
+    double? monthlyInterestRate,
+    double? totalInterestPaid,
+    double? totalPrincipalReturned,
+    double? outstandingBalance,
+    InvestmentStatus? status,
+    String? notes,
+    DateTime? createdAt,
+    DateTime? updatedAt
+  }) {
+    return InvestmentModel(
+      investmentId: investmentId ?? this.investmentId,
+      investorName: investorName ?? this.investorName,
+      amount: amount ?? this.amount,
+      monthlyInterestRate: monthlyInterestRate ?? this.monthlyInterestRate,
+      totalInterestPaid: totalInterestPaid ?? this.totalInterestPaid,
+      totalPrincipalReturned: totalPrincipalReturned ?? this.totalPrincipalReturned,
+      outstandingBalance: outstandingBalance ?? this.outstandingBalance,
+      status: status ?? this.status,
+      notes: notes ?? this.notes,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt
+    );
+  }
+  @override
+  List<Object?> get props => [investmentId, investorName, amount, monthlyInterestRate, totalInterestPaid, totalPrincipalReturned, outstandingBalance, status, notes, createdAt, updatedAt];
 }

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:ui';
@@ -19,21 +21,7 @@ Future<void> main() async {
   // Asegura que los bindings de Flutter estén listos antes de usar plugins
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Capturar errores de Flutter
-  FlutterError.onError = (FlutterErrorDetails details) {
-    FlutterError.presentError(details);
-    debugPrint('=== FLUTTER ERROR ===');
-    debugPrint(details.exceptionAsString());
-    debugPrint(details.stack?.toString());
-  };
 
-  // Capturar errores no controlados de la plataforma/asíncronos
-  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
-    debugPrint('=== UNCAUGHT DART ERROR ===');
-    debugPrint(error.toString());
-    debugPrint(stack.toString());
-    return true;
-  };
 
   // Inicializar SharedPreferences de manera global y síncrona para el resto de la app
   sharedPreferences = await SharedPreferences.getInstance();
@@ -50,6 +38,39 @@ Future<void> main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Configurar Crashlytics
+  FlutterError.onError = (errorDetails) {
+    FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
+    
+    // Mostrar alerta en UI si es posible
+    if (navigatorKey.currentContext != null) {
+      ScaffoldMessenger.of(navigatorKey.currentContext!).showSnackBar(
+        const SnackBar(
+          content: Text('Ha ocurrido un error inesperado, el administrador ha sido notificado.'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
+  };
+
+  PlatformDispatcher.instance.onError = (error, stack) {
+    FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+    
+    // Mostrar alerta en UI si es posible
+    if (navigatorKey.currentContext != null) {
+      ScaffoldMessenger.of(navigatorKey.currentContext!).showSnackBar(
+        const SnackBar(
+          content: Text('Ha ocurrido un error inesperado, el administrador ha sido notificado.'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
+    return true;
+  };
+
 
   // Inicializar servicio de notificaciones locales (alarmas nativas)
   try {

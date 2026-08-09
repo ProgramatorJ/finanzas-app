@@ -1,6 +1,7 @@
+import 'package:equatable/equatable.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-class ExpenseModel {
+class ExpenseModel extends Equatable {
   final String expenseId;
   final double amount;
   final String category;
@@ -38,4 +39,25 @@ class ExpenseModel {
       createdBy: map['createdBy'] ?? '',
     );
   }
+
+
+  ExpenseModel copyWith({
+    String? expenseId,
+    double? amount,
+    String? category,
+    String? description,
+    DateTime? date,
+    String? createdBy
+  }) {
+    return ExpenseModel(
+      expenseId: expenseId ?? this.expenseId,
+      amount: amount ?? this.amount,
+      category: category ?? this.category,
+      description: description ?? this.description,
+      date: date ?? this.date,
+      createdBy: createdBy ?? this.createdBy
+    );
+  }
+  @override
+  List<Object?> get props => [expenseId, amount, category, description, date, createdBy];
 }

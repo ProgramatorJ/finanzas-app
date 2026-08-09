@@ -1,3 +1,4 @@
+import 'package:finanzas_app/core/enums/user_role.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../shared/theme/responsive_sidebar_scaffold.dart';

@@ -1,3 +1,6 @@
+import 'package:finanzas_app/core/repositories/payments_repository.dart';
+import 'package:finanzas_app/core/repositories/credits_repository.dart';
+import 'package:finanzas_app/core/enums/user_role.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -10,7 +13,7 @@ import '../../core/utils/mora_engine.dart';
 import '../../shared/theme/app_theme.dart';
 
 final paymentInstallmentsProvider = StreamProvider.family<List<InstallmentModel>, String>((ref, creditId) {
-  return ref.read(firestoreServiceProvider).getInstallmentsStream(creditId);
+  return ref.read(creditsRepositoryProvider).getInstallmentsStream(creditId);
 });
 
 class PaymentFormScreen extends ConsumerStatefulWidget {
@@ -113,6 +116,13 @@ class _PaymentFormScreenState extends ConsumerState<PaymentFormScreen> {
             targetDate: _paymentDate,
           );
 
+          // Calcular deuda total proyectada para validación
+          final double totalDebt = projectedInstallmentsWithMora.fold(0.0, (sum, inst) {
+            if (inst.status == InstallmentStatus.paid || inst.remainingAmount <= 0) return sum;
+            final double unpaidMora = inst.isMoraExempt ? 0.0 : (inst.accumulatedMora - inst.moraPaid).clamp(0.0, double.infinity);
+            return sum + inst.remainingAmount + unpaidMora;
+          });
+
           // 2. Aplicar cascada
           final cascadeResult = MoraEngine.applyPaymentCascade(
             currentInstallments: projectedInstallmentsWithMora,
@@ -153,15 +163,19 @@ class _PaymentFormScreenState extends ConsumerState<PaymentFormScreen> {
                               TextFormField(
                                 controller: _amountController,
                                 keyboardType: TextInputType.number,
+                                enabled: !_isSaving,
                                 style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                                decoration: const InputDecoration(
+                                decoration: InputDecoration(
                                   labelText: 'Monto a Recibir (COP)',
-                                  prefixIcon: Icon(Icons.attach_money_rounded),
+                                  prefixIcon: const Icon(Icons.attach_money_rounded),
+                                  helperText: 'Deuda actual: ${copFormatter.format(totalDebt)}',
+                                  helperStyle: TextStyle(color: theme.colorScheme.primary, fontWeight: FontWeight.bold),
                                 ),
                                 validator: (v) {
                                   if (v == null || v.trim().isEmpty) return 'Ingresa el monto';
                                   final val = double.tryParse(v);
                                   if (val == null || val <= 0) return 'Monto inválido';
+                                  if (val > totalDebt + 0.01) return 'El abono supera la deuda total';
                                   return null;
                                 },
                                 onChanged: (_) => setState(() {}),
@@ -405,6 +419,30 @@ class _PaymentFormScreenState extends ConsumerState<PaymentFormScreen> {
   Future<void> _submitPayment(String userId) async {
     if (!_formKey.currentState!.validate()) return;
 
+    final double? amount = double.tryParse(_amountController.text.replaceAll(',', '.').trim());
+    if (amount == null || amount <= 0) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirmar Abono'),
+        content: Text('¿Estás seguro de registrar este abono por ? Esta acción no se puede deshacer de forma sencilla.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: ElevatedButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.primary),
+            child: const Text('Confirmar', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     setState(() => _isSaving = true);
 
     try {
@@ -428,7 +466,7 @@ class _PaymentFormScreenState extends ConsumerState<PaymentFormScreen> {
         createdAt: DateTime.now(),
       );
 
-      await ref.read(firestoreServiceProvider).registerPaymentTransaction(
+      await ref.read(paymentsRepositoryProvider).registerPaymentTransaction(
         creditId: widget.creditId,
         payment: payment,
         dailyMoraRate: widget.dailyMoraRate,

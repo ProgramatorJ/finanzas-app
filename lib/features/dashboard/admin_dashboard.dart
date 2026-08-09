@@ -1,3 +1,4 @@
+import '../users/user_list_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/services/rbac_service.dart';
@@ -166,7 +167,13 @@ class _AdminDashboardState extends ConsumerState<AdminDashboard> {
                     title: 'Cobradores',
                     subtitle: 'Gestionar cobradores',
                     color: Theme.of(context).colorScheme.tertiary,
-                    available: false,
+                    available: true,
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const UserListScreen()),
+                        );
+                      },
                   ),
                   _DashboardCard(
                     icon: Icons.bar_chart_rounded,
