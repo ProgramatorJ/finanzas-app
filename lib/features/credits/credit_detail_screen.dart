@@ -135,6 +135,15 @@ class CreditDetailScreen extends ConsumerWidget {
         final credits = snapshot.data!;
         final credit = credits.firstWhere((c) => c.creditId == creditId, orElse: () => credits.first);
 
+        if (credit.schemaVersion < AppConstants.currentMathSchemaVersion) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            ref.read(paymentsRepositoryProvider).forceRebuildAndMigrateCredit(credit.creditId).catchError((e) {
+              debugPrint('Error en migracion forzada: $e');
+            });
+          });
+        }
+
+
         // Calcular la mora diaria de referencia por cuota (sobre el monto programado original)
         final double refDailyMoraPerInstallment = credit.installmentAmount * credit.dailyMoraRate;
 

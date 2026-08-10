@@ -67,6 +67,8 @@ class MoraEngine {
       InstallmentStatus status = inst.status;
       final double base = inst.remainingAmount;
 
+      DateTime? newMoraStartDate = inst.moraStartDate;
+
       if (targetNormalized.isAfter(instDueNormalized)) {
         status = InstallmentStatus.overdue;
         if (targetNormalized.isAfter(startNormalized)) {
@@ -75,6 +77,7 @@ class MoraEngine {
             final double additionalMora = base * dailyMoraRate * days;
             newAccMora = inst.accumulatedMora + additionalMora;
             isMoraActive = true;
+            newMoraStartDate = targetNormalized; // Advance the cursor!
           }
         }
       } else {
@@ -89,6 +92,7 @@ class MoraEngine {
         accumulatedMora: newAccMora,
         isMoraActive: isMoraActive,
         status: status,
+        moraStartDate: newMoraStartDate,
       );
     }
 

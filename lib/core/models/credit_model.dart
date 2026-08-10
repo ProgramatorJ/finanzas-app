@@ -43,6 +43,7 @@ class CreditModel extends Equatable {
   final String? notes;
   final DateTime createdAt;
   final DateTime updatedAt;
+  final int schemaVersion;
 
   CreditModel({
     required this.creditId,
@@ -72,6 +73,7 @@ class CreditModel extends Equatable {
     this.notes,
     required this.createdAt,
     required this.updatedAt,
+    this.schemaVersion = 1,
   });
 
   factory CreditModel.fromMap(Map<String, dynamic> map, String documentId) {
@@ -103,6 +105,7 @@ class CreditModel extends Equatable {
       notes: map['notes'],
       createdAt: (map['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       updatedAt: (map['updatedAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      schemaVersion: (map['schemaVersion'] as num?)?.toInt() ?? 1,
     );
   }
 
@@ -134,6 +137,7 @@ class CreditModel extends Equatable {
       'notes': notes,
       'createdAt': Timestamp.fromDate(createdAt),
       'updatedAt': Timestamp.fromDate(updatedAt),
+      'schemaVersion': schemaVersion,
     };
   }
 
@@ -165,7 +169,8 @@ class CreditModel extends Equatable {
     double? accumulatedMora,
     String? notes,
     DateTime? createdAt,
-    DateTime? updatedAt
+    DateTime? updatedAt,
+    int? schemaVersion
   }) {
     return CreditModel(
       creditId: creditId ?? this.creditId,
@@ -194,7 +199,8 @@ class CreditModel extends Equatable {
       accumulatedMora: accumulatedMora ?? this.accumulatedMora,
       notes: notes ?? this.notes,
       createdAt: createdAt ?? this.createdAt,
-      updatedAt: updatedAt ?? this.updatedAt
+      updatedAt: updatedAt ?? this.updatedAt,
+      schemaVersion: schemaVersion ?? this.schemaVersion
     );
   }
   @override

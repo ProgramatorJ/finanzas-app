@@ -1,4 +1,7 @@
 class AppConstants {
+  // Versión actual de la lógica matemática (usado para migraciones forzadas)
+  static const int currentMathSchemaVersion = 3;
+
   // Tasas financieras por defecto (editables por el admin en base de datos)
   static const double defaultMonthlyInterestRate = 0.10; // 10% mensual
   static const double defaultDailyMoraRate = 0.007;      // 0.7% diario
