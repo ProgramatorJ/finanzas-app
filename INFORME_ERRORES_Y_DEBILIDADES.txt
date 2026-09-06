@@ -1,0 +1,544 @@
+================================================================================
+  INFORME DE ERRORES, BUGS Y DEBILIDADES - FINANZAS APP (BANX)
+  Auditoría de Código - Septiembre 2026
+================================================================================
+
+--------------------------------------------------------------------------------
+1. RESUMEN EJECUTIVO
+--------------------------------------------------------------------------------
+
+Durante la auditoría exhaustiva de la base de código del proyecto Finanzas App
+(Banx), se identificaron más de 25 hallazgos entre errores de compilación/diseño,
+inconsistencias en lógica financiera, vulnerabilidades de seguridad en reglas de
+Firestore, problemas de calidad de código y deuda técnica.
+
+Distribución de hallazgos por nivel de severidad:
+  - [CRÍTICO]     :  4 hallazgos
+  - [ALTO]        :  5 hallazgos
+  - [SEGURIDAD]   :  3 hallazgos
+  - [MEDIO]       :  8 hallazgos
+  - [BAJO]        :  6 hallazgos
+  ---------------------------------
+  TOTAL HALLAZGOS : 26 hallazgos principales
+  RECOMENDACIONES :  6 directrices estratégicas
+
+Tabla de Resumen:
++---------+-------------------------------------------------------------+-------------+
+| Código  | Título del Hallazgo                                         | Severidad   |
++---------+-------------------------------------------------------------+-------------+
+| C-001   | Auto-importación en credits_repository.dart                | CRÍTICO     |
+| C-002   | Auto-importación en payments_repository.dart               | CRÍTICO     |
+| C-003   | Auto-importación en user_role.dart                         | CRÍTICO     |
+| C-004   | Importación duplicada en credits_repository.dart           | CRÍTICO     |
+| A-001   | Enum PaymentMethod duplicado con valores incompatibles      | ALTO        |
+| A-002   | deletePayment recalcula totales de forma contradictoria     | ALTO        |
+| A-003   | forceRebuildAndMigrateCredit usa breakdowns antiguos        | ALTO        |
+| A-004   | ceilToDouble() causa sobrecarga de capital en cuotas        | ALTO        |
+| A-005   | Uso de WriteBatch en vez de runTransaction en tesorería     | ALTO        |
+| S-001   | Email de administrador hardcodeado en Firestore Rules       | SEGURIDAD   |
+| S-002   | Bug en regla create de appointments (resource.data null)    | SEGURIDAD   |
+| S-003   | Permisos excesivos de escritura para cobradores en treasury | SEGURIDAD   |
+| M-001   | go_router declarado como dependencia pero no utilizado      | MEDIO       |
+| M-002   | firebase_messaging importado sin implementación FCM         | MEDIO       |
+| M-003   | dependency_overrides sin justificación ni documentación     | MEDIO       |
+| M-004   | Ausencia de paginación real en consultas de Firestore       | MEDIO       |
+| M-005   | Fecha de corte financiera (cutoffDate) hardcodeada          | MEDIO       |
+| M-006   | copyWith de PaymentModel no incluye installmentBreakdowns   | MEDIO       |
+| M-007   | schemaVersion ausente en props de Equatable (CreditModel)   | MEDIO       |
+| M-008   | installmentBreakdowns ausente en props (PaymentModel)       | MEDIO       |
+| B-001   | Invocaciones a print() en código de producción              | BAJO        |
+| B-002   | SharedPreferences expuesto como variable global mutable     | BAJO        |
+| B-003   | ScaffoldMessenger propenso a excepciones en error handler   | BAJO        |
+| B-004   | Cobertura nula de tests unitarios y de integración          | BAJO        |
+| B-005   | Diálogo de confirmación de pago no visualiza monto a pagar  | BAJO        |
+| B-006   | Doble declaración de variable 'amount' en _submitPayment    | BAJO        |
++---------+-------------------------------------------------------------+-------------+
+
+
+================================================================================
+2. ERRORES CRÍTICOS (C)
+================================================================================
+
+--------------------------------------------------------------------------------
+C-001: Auto-importación en credits_repository.dart
+--------------------------------------------------------------------------------
+- Archivo     : lib/core/repositories/credits_repository.dart, Línea 1
+- Severidad   : CRÍTICO
+- Descripción : El archivo contiene una directiva de importación que apunta
+                hacia sí mismo:
+                `import 'package:finanzas_app/core/repositories/credits_repository.dart';`
+- Impacto     : Provoca confusión en los grafos de dependencias del analizador
+                estático de Dart, genera advertencias en el linter y puede
+                ocasionar fallos o comportamientos anómalos durante la
+                resolución de símbolos en fases de compilación / hot reload.
+- Solución    : Eliminar inmediatamente la línea 1 del archivo.
+
+--------------------------------------------------------------------------------
+C-002: Auto-importación en payments_repository.dart
+--------------------------------------------------------------------------------
+- Archivo     : lib/core/repositories/payments_repository.dart, Línea 1
+- Severidad   : CRÍTICO
+- Descripción : El archivo contiene una directiva de importación reflexiva hacia
+                sí mismo:
+                `import 'package:finanzas_app/core/repositories/payments_repository.dart';`
+- Impacto     : Genera advertencias del analizador de Dart (`duplicate_import` /
+                referencia circular innecesaria) y entorpece la compilación limpia.
+- Solución    : Eliminar la directiva de auto-importación en la cabecera del archivo.
+
+--------------------------------------------------------------------------------
+C-003: Auto-importación en user_role.dart
+--------------------------------------------------------------------------------
+- Archivo     : lib/core/enums/user_role.dart, Línea 1
+- Severidad   : CRÍTICO
+- Descripción : El enum define en su primera línea:
+                `import 'package:finanzas_app/core/enums/user_role.dart';`
+                importándose a sí mismo.
+- Impacto     : Dependencia circular interna en un enum fundamental utilizado en
+                toda la arquitectura de control de acceso basada en roles (RBAC).
+- Solución    : Eliminar la directiva de importación reflexiva en la línea 1.
+
+--------------------------------------------------------------------------------
+C-004: Importación duplicada en credits_repository.dart
+--------------------------------------------------------------------------------
+- Archivo     : lib/core/repositories/credits_repository.dart, Líneas 5 y 9
+- Severidad   : CRÍTICO
+- Descripción : El modelo `installment_model.dart` se importa dos veces en el
+                mismo encabezado del repositorio de créditos:
+                Línea 5: `import 'package:finanzas_app/core/models/installment_model.dart';`
+                Línea 9: `import '../models/installment_model.dart';` (o duplicado equivalente)
+- Impacto     : Genera ruido en el analizador de código, viola estándares de estilo
+                y expone desatención en el mantenimiento de módulos centrales.
+- Solución    : Eliminar la importación redundante conservando únicamente una
+                referencia consistente bajo la convención de paquetes.
+
+
+================================================================================
+3. ERRORES DE LÓGICA FINANCIERA (ALTO) (A)
+================================================================================
+
+--------------------------------------------------------------------------------
+A-001: Enum PaymentMethod definido DOS veces con valores INCOMPATIBLES
+--------------------------------------------------------------------------------
+- Archivos    : 1) lib/core/enums/payment_method.dart
+                   Valores: `efectivo`, `transferencia`, `consignacion`
+                2) lib/core/models/payment_model.dart
+                   Valores: `cash`, `transfer`, `other`
+- Severidad   : ALTO (Severidad Máxima en Lógica de Negocio)
+- Descripción : `payment_model.dart` importa el archivo `enums/payment_method.dart`
+                pero acto seguido declara su propia definición local de
+                `enum PaymentMethod` con identificadores en inglés (`cash`,
+                `transfer`, `other`). La definición local oculta por completo la
+                importada dentro del alcance del modelo.
+- Impacto     : GRAVE. Los pagos creados en la interfaz gráfica utilizan los
+                valores del modelo (`PaymentMethod.cash`), mientras que servicios
+                externos, reglas o enumeradores esperan la convención en español
+                (`PaymentMethod.efectivo`).
+                Consecuencias directas:
+                1. Serialización y deserialización inconsistente en documentos
+                   Firestore (`paymentMethod` almacenado como "cash" vs "efectivo").
+                2. Los métodos auxiliares `fromString()` y validadores lanzan
+                   excepciones al procesar registros cruzados.
+                3. `PaymentFormScreen` utiliza los valores locales del modelo
+                   mientras las vistas de selección y filtrado manejan etiquetas
+                   hardcodeadas, produciendo desajustes en reportes de caja.
+- Solución    : Unificar formalmente el enum en una única ubicación canónica
+                (`lib/core/enums/payment_method.dart`). Seleccionar una única
+                convención (preferiblemente español o inglés estandarizado),
+                eliminar la declaración duplicada en `payment_model.dart`, y
+                ejecutar un script de migración para normalizar los valores ya
+                persistidos en la base de datos Firestore.
+
+--------------------------------------------------------------------------------
+A-002: deletePayment recalcula totales de forma contradictoria
+--------------------------------------------------------------------------------
+- Archivo     : lib/core/repositories/payments_repository.dart, Líneas 347-450
+- Severidad   : ALTO
+- Descripción : En el método `deletePayment()`, el algoritmo implementa dos
+                mecanismos incompatibles entre sí:
+                1. Paso 1 (Líneas 347-351): Computa una deducción aritmética
+                   directa sobre el crédito restando los valores nominales del
+                   pago que se desea suprimir:
+                   `newTotalPaid = credit.totalPaid - payment.amount`
+                   `newTotalPrincipal = credit.totalPaidPrincipal - payment.appliedToPrincipal`
+                2. Paso 2 (Líneas 397-411): Realiza un replay completo (cascada
+                   de cuotas) recalculando de 0 todos los pagos restantes.
+                Sin embargo, al persistir los cambios finales en el documento del
+                crédito, se emplean los valores resultantes de la sustracción simple
+                del Paso 1 en lugar de consolidar los valores exactos emanados del
+                replay del Paso 2.
+- Impacto     : En créditos con amortización no lineal, recargos de mora o
+                distribución variable de intereses, los totales acumulados del
+                crédito (`totalPaid`, `totalPaidPrincipal`, `totalPaidInterest`,
+                `balance`) quedan desincronizados y en desacuerdo con la sumatoria
+                real de las cuotas (`installmentBreakdowns`).
+- Solución    : Descartar la sustracción ingenua del Paso 1. Utilizar de forma
+                exclusiva los acumuladores generados por la reconstrucción en
+                cascada (Paso 2) para actualizar el estado contable del crédito.
+
+--------------------------------------------------------------------------------
+A-003: forceRebuildAndMigrateCredit usa breakdowns antiguos
+--------------------------------------------------------------------------------
+- Archivo     : lib/core/repositories/payments_repository.dart, Líneas 272-275
+- Severidad   : ALTO
+- Descripción : Durante el proceso de reconstrucción forzada y migración
+                (`forceRebuildAndMigrateCredit`), el sistema suma
+                `p.appliedToPrincipal`, `p.appliedToInterest` y `p.appliedToMora`
+                a partir de los datos preexistentes en los documentos de pago,
+                en lugar de extraerlos de los resultados recién calculados por la
+                nueva ejecución de la cascada.
+- Impacto     : Si la lógica de cascada o asignación de mora cambió entre versiones
+                de esquema, los totales migrados retendrán los errores o discrepancias
+                del algoritmo histórico, invalidando el propósito de la migración.
+- Solución    : Alimentar la actualización de totales del crédito estrictamente
+                con las instancias de desglose (`breakdown`) recién computadas por
+                el motor de cascada.
+
+--------------------------------------------------------------------------------
+A-004: ceilToDouble() causa sobrecarga de capital en cuotas
+--------------------------------------------------------------------------------
+- Archivo     : lib/core/repositories/credits_repository.dart, Línea 267
+- Severidad   : ALTO
+- Descripción : Al calcular el valor del capital por cuota en la creación del plan
+                de amortización, se invoca `ceilToDouble()` para redondear hacia
+                arriba cada cuota individual:
+                `principalPerInstallment = (principal / count).ceilToDouble();`
+                Al multiplicar este valor por N cuotas, la sumatoria excede el
+                capital prestado (`principalAmount`). El algoritmo intenta compensar
+                el excedente en la última cuota (línea 285) forzando el saldo residual:
+                `installments.last = installments.last.copyWith(principal: remainingPrincipal);`
+- Impacto     : En escenarios donde el exceso acumulado de redondeos hacia arriba
+                es significativo o las amortizaciones son pequeñas, el residuo
+                de capital puede resultar en un valor negativo para la última cuota,
+                rompiendo la coherencia contable y generando cuotas con saldo ilógico.
+- Solución    : Utilizar redondeo estándar o truncación aritmética a dos decimales
+                (o múltiplos enteros exactos de la unidad monetaria COP) y liquidar
+                la diferencia positiva restante en la última cuota sin permitir
+                bajo ninguna circunstancia componentes negativos.
+
+--------------------------------------------------------------------------------
+A-005: Batch vs Transaction en tesorería
+--------------------------------------------------------------------------------
+- Archivo     : lib/core/repositories/treasury_repository.dart
+- Severidad   : ALTO
+- Descripción : Las operaciones de caja y tesorería (registro de gastos, ingresos,
+                inversiones y ajustes) se ejecutan empleando `WriteBatch` de
+                Firestore en lugar de `runTransaction`. Un `WriteBatch` agrupa
+                escrituras atómicas pero NO proporciona aislamiento ni lecturas
+                consistentes ("read-before-write").
+- Impacto     : Condición de carrera (Race Condition): Si dos usuarios o procesos
+                registran movimientos de tesorería en paralelo, ambos leen el mismo
+                documento con `currentBalance`, efectúan sus respectivas sumas/restas
+                en memoria y envían sus batches. La última escritura sobrescribe
+                a la primera, corrompiendo irreversiblemente el saldo de caja.
+                En contraste, `payments_repository.dart` sí utiliza transacciones
+                correctamente.
+- Solución    : Migrar de inmediato todas las mutaciones que alteren `currentBalance`
+                y arqueos de caja hacia `FirebaseFirestore.instance.runTransaction()`.
+
+
+================================================================================
+4. SEGURIDAD (S)
+================================================================================
+
+--------------------------------------------------------------------------------
+S-001: Email de admin hardcodeado en Firestore Rules
+--------------------------------------------------------------------------------
+- Archivo     : firestore.rules, Línea 14
+- Severidad   : SEGURIDAD (ALTO)
+- Descripción : La regla de autorización administrativa está ligada directamente
+                a una cadena fija de texto:
+                `function isAdmin() { return request.auth.token.email == 'admin@gestor.com'; }`
+- Impacto     : 1. Compromiso de seguridad: La identidad del administrador está
+                   expuesta públicamente en el repositorio de código.
+                2. Nula flexibilidad operativa: Es imposible delegar, añadir o
+                   rotar credenciales de administradores sin recompilar y
+                   redesplegar las reglas completas de Firestore.
+- Solución    : Implementar Firebase Auth Custom Claims (`request.auth.token.admin == true`)
+                o validar contra un documento protegido en `/roles/admins/$(request.auth.uid)`.
+
+--------------------------------------------------------------------------------
+S-002: Bug en regla de citas (appointments) - resource.data en create
+--------------------------------------------------------------------------------
+- Archivo     : firestore.rules, Línea 93
+- Severidad   : SEGURIDAD / DEFECTO DE CONFIGURACIÓN
+- Descripción : La regla que autoriza la creación (`allow create`) de documentos en
+                la colección `appointments` evalúa:
+                `resource.data.collectorId == request.auth.uid`
+                En Firestore Security Rules, la variable global `resource` hace
+                referencia al documento preexistente en la base de datos. Al momento
+                de invocar `create`, el documento aún no existe en el almacenamiento,
+                por lo que `resource` es `null`.
+- Impacto     : La regla falla en tiempo de ejecución por evaluación nula. Los
+                cobradores quedan impedidos de registrar citas legítimas desde la app,
+                obligando a que únicamente usuarios administradores con bypass
+                puedan agendar visitas.
+- Solución    : Modificar la regla en el bloque `create` para evaluar el contenido
+                entrante mediante `request.resource.data.collectorId == request.auth.uid`.
+
+--------------------------------------------------------------------------------
+S-003: Acceso de escritura demasiado amplio para cobradores en tesorería
+--------------------------------------------------------------------------------
+- Archivo     : firestore.rules, Línea 106
+- Severidad   : SEGURIDAD (MEDIO-ALTO)
+- Descripción : La colección `treasury` permite permisos de escritura directos
+                a usuarios con rol de cobrador (`isCollector()`).
+- Impacto     : Un cobrador malintencionado o una sesión vulnerada en un dispositivo
+                móvil podría modificar manualmente documentos de saldo de caja,
+                borrar o falsificar registros de transferencias o alterar el balance
+                general sin pasar por las validaciones de la interfaz de usuario.
+- Solución    : Limitar el acceso de escritura en `treasury` exclusivamente a
+                usuarios administradores, o delegar todas las mutaciones de caja
+                a Firebase Cloud Functions con validación formal en el servidor.
+
+
+================================================================================
+5. PROBLEMAS DE CALIDAD DE CÓDIGO (MEDIO) (M)
+================================================================================
+
+--------------------------------------------------------------------------------
+M-001: go_router importado pero no utilizado
+--------------------------------------------------------------------------------
+- Archivo     : pubspec.yaml (`go_router: ^17.2.3`)
+- Severidad   : MEDIO
+- Descripción : El paquete `go_router` está declarado en las dependencias del
+                proyecto, pero el flujo de navegación de la aplicación utiliza
+                de manera exclusiva llamadas manuales a `Navigator.push()` con
+                `MaterialPageRoute`.
+- Impacto     : Incremento innecesario en el peso del binario compilado y
+                ambigüedad en las directrices arquitectónicas para los desarrolladores.
+- Solución    : Remover `go_router` del archivo `pubspec.yaml` o ejecutar una
+                migración completa hacia enrutamiento declarativo con `go_router`.
+
+--------------------------------------------------------------------------------
+M-002: firebase_messaging importado sin implementación FCM visible
+--------------------------------------------------------------------------------
+- Archivo     : pubspec.yaml (`firebase_messaging`), lib/main.dart
+- Severidad   : MEDIO
+- Descripción : Se incluye la librería de notificaciones push de Firebase, pero
+                no existen manejadores en segundo plano (`onBackgroundMessage`),
+                solicitud de permisos, ni registro/almacenamiento de tokens FCM.
+- Impacto     : Añade sobrecarga en tiempo de inicio, permisos adicionales en
+                Android/iOS y dependencias nativas inactivas.
+- Solución    : Implementar la capa de notificaciones para alertas de mora y cobro,
+                o eliminar la dependencia hasta que el módulo sea programado.
+
+--------------------------------------------------------------------------------
+M-003: dependency_overrides sin documentar
+--------------------------------------------------------------------------------
+- Archivo     : pubspec.yaml (`dependency_overrides: path_provider_foundation: 2.5.1`)
+- Severidad   : MEDIO
+- Descripción : Se fuerza la versión de `path_provider_foundation` sin ningún
+                comentario explicativo en el archivo de configuración.
+- Impacto     : Puede enmascarar conflictos de dependencias entre paquetes transitivos,
+                bloquear actualizaciones automáticas de Flutter SDK y provocar
+                fallos de compilación en futuros entornos de CI/CD.
+- Solución    : Documentar detalladamente el motivo del override (e.g., incompatibilidad
+                temporal con macOS/iOS) y verificar si versiones actuales resuelven
+                el conflicto nativo.
+
+--------------------------------------------------------------------------------
+M-004: Sin paginación real en consultas Firestore
+--------------------------------------------------------------------------------
+- Archivo     : Múltiples repositorios (`credits_repository.dart`, `payments_repository.dart`, etc.)
+- Severidad   : MEDIO
+- Descripción : Las consultas a Firestore descargan colecciones completas usando
+                topes masivos como `.limit(10000)` sin paginación basada en cursores
+                (`.startAfterDocument()`).
+- Impacto     : A medida que el histórico de clientes, créditos y pagos crezca:
+                1. Consumo masivo e innecesario de cuota de lecturas en Firestore ($$$).
+                2. Elevado consumo de memoria RAM en los dispositivos móviles.
+                3. Congelamiento de UI y latencias intolerables en pantallas iniciales.
+- Solución    : Diseñar arquitectura de paginación reactiva usando cursores
+                (`startAfter`) o scrolling infinito con Riverpod.
+
+--------------------------------------------------------------------------------
+M-005: Fecha de corte hardcodeada (cutoffDate)
+--------------------------------------------------------------------------------
+- Archivo     : lib/features/shared/financial_providers.dart, lib/features/reports/*.dart
+- Severidad   : MEDIO
+- Descripción : Se utiliza una constante fija en el código fuente:
+                `cutoffDate = DateTime(2026, 7, 1);`
+                como fecha de inicio de operaciones para filtrar balances y pagos.
+- Impacto     : Imposibilidad de reutilizar el software para nuevos periodos fiscales,
+                sucursales o despliegues multi-inquilino (multi-tenant). Las transacciones
+                anteriores son ignoradas silenciosamente en los balances.
+- Solución    : Mover `cutoffDate` a un documento de configuración global en Firestore
+                (`system_config/financial`) accesible y configurable por el administrador.
+
+--------------------------------------------------------------------------------
+M-006: copyWith de PaymentModel no incluye installmentBreakdowns
+--------------------------------------------------------------------------------
+- Archivo     : lib/core/models/payment_model.dart
+- Severidad   : MEDIO
+- Descripción : El método de conveniencia `copyWith()` no expone el parámetro
+                `installmentBreakdowns` en su firma.
+- Impacto     : Es imposible clonar o actualizar programáticamente un `PaymentModel`
+                modificando únicamente sus desgloses de cuota, forzando la creación
+                manual y propensa a errores de nuevas instancias completas.
+- Solución    : Incorporar `List<InstallmentBreakdown>? installmentBreakdowns`
+                en los argumentos opcionales del método `copyWith`.
+
+--------------------------------------------------------------------------------
+M-007: schemaVersion no incluido en Equatable props de CreditModel
+--------------------------------------------------------------------------------
+- Archivo     : lib/core/models/credit_model.dart
+- Severidad   : MEDIO
+- Descripción : La propiedad `schemaVersion` fue excluida de la lista `List<Object?> get props`
+                en la implementación de la clase `CreditModel` (que extiende `Equatable`).
+- Impacto     : Si un crédito sufre un cambio de versión de esquema tras un proceso de
+                migración, pero sus campos principales no varían, los Providers de Riverpod
+                evaluarán los dos objetos como idénticos (`oldState == newState`),
+                omitiendo la reconstrucción reactiva de los widgets.
+- Solución    : Incluir `schemaVersion` dentro del arreglo de `props`.
+
+--------------------------------------------------------------------------------
+M-008: installmentBreakdowns no incluido en Equatable props de PaymentModel
+--------------------------------------------------------------------------------
+- Archivo     : lib/core/models/payment_model.dart
+- Severidad   : MEDIO
+- Descripción : La lista `installmentBreakdowns` no forma parte de los `props` de
+                `Equatable` en `PaymentModel`.
+- Impacto     : Cambios internos en la distribución de capital/interés/mora entre
+                cuotas no se detectan por igualdad estructural, dejando interfaces
+                financieras con datos desactualizados en memoria.
+- Solución    : Agregar `installmentBreakdowns` a la lista retornada por el getter `props`.
+
+
+================================================================================
+6. PROBLEMAS MENORES (BAJO) (B)
+================================================================================
+
+--------------------------------------------------------------------------------
+B-001: print() en código de producción
+--------------------------------------------------------------------------------
+- Archivo     : lib/core/utils/mora_engine.dart, Línea 116
+- Severidad   : BAJO
+- Descripción : Se encuentra presente una instrucción directa `print(...)` en
+                lugar de utilizar utilidades de depuración o logging.
+- Impacto     : Las sentencias `print()` no son ofuscadas ni deshabilitadas en
+                builds de producción (Release), pudiendo filtrar detalles de la
+                lógica de cálculo a los logs del sistema del dispositivo (logcat/syslog).
+- Solución    : Sustituir por `debugPrint()` o por un Logger corporativo condicional.
+
+--------------------------------------------------------------------------------
+B-002: SharedPreferences como variable global mutable
+--------------------------------------------------------------------------------
+- Archivo     : lib/main.dart, Línea 18
+- Severidad   : BAJO
+- Descripción : La instancia de almacenamiento local está expuesta globalmente:
+                `late final SharedPreferences sharedPreferences;`
+- Impacto     : Genera acoplamiento fuerte, dificulta la creación de mocks en
+                entornos de pruebas unitarias y transgrede el patrón de inyección
+                de dependencias mediante Riverpod.
+- Solución    : Encapsular la instancia dentro de un `sharedPreferencesProvider`
+                anulado mediante `ProviderScope(overrides: [...])` en el arranque.
+
+--------------------------------------------------------------------------------
+B-003: ScaffoldMessenger en error handler puede fallar
+--------------------------------------------------------------------------------
+- Archivo     : lib/main.dart, Líneas 47-55
+- Severidad   : BAJO
+- Descripción : El manejador global `FlutterError.onError` intenta presentar un
+                SnackBar invocando:
+                `ScaffoldMessenger.of(navigatorKey.currentContext!).showSnackBar(...)`
+- Impacto     : Si el error ocurre durante el ciclo de vida inicial de la app o
+                durante una transición de pantalla donde no existe un ancestro
+                `ScaffoldMessenger` en el árbol de widgets, se desata una excepción
+                no controlada que oculta la traza del error original.
+- Solución    : Rodear la llamada con un bloque `try-catch` y verificar la validez
+                del contexto antes de proyectar la alerta en pantalla.
+
+--------------------------------------------------------------------------------
+B-004: No hay tests unitarios
+--------------------------------------------------------------------------------
+- Archivo     : Directorio `test/`
+- Severidad   : BAJO / DEUDA TÉCNICA
+- Descripción : El repositorio no cuenta con una suite de pruebas unitarias ni
+                de integración. La cobertura de código es del 0%.
+- Impacto     : Componentes altamente delicados como `MoraEngine`, el cálculo
+                de cascada de pagos y el calendario comercial carecen de verificación
+                automatizada ante futuras refactorizaciones.
+- Solución    : Implementar pruebas unitarias sistemáticas sobre los algoritmos
+                matemáticos y financieros centrales.
+
+--------------------------------------------------------------------------------
+B-005: Confirmation dialog en PaymentFormScreen no muestra monto
+--------------------------------------------------------------------------------
+- Archivo     : lib/features/payments/payment_form_screen.dart, Línea 429
+- Severidad   : BAJO / EXPERIENCIA DE USUARIO (UX)
+- Descripción : El diálogo de advertencia previo al registro despliega el texto:
+                `'¿Estás seguro de registrar este abono por ?'`
+                omitiendo la concatenación de la cifra.
+- Impacto     : El usuario debe aceptar a ciegas la operación sin verificar el
+                monto real que el formulario capturó.
+- Solución    : Interpolar el monto formateado:
+                `'¿Estás seguro de registrar este abono por ${copFormatter.format(amount)}?'`
+
+--------------------------------------------------------------------------------
+B-006: Variable amount declarada dos veces en _submitPayment
+--------------------------------------------------------------------------------
+- Archivo     : lib/features/payments/payment_form_screen.dart, Líneas 422 y 449
+- Severidad   : BAJO
+- Descripción : La variable local `amount` es declarada dos veces de forma redundante:
+                primero antes del diálogo y nuevamente dentro del bloque `try-catch`.
+                La segunda variable ensombrece (shadowing) a la primera.
+- Impacto     : Código confuso y riesgo latente de procesar montos dispares ante
+                modificaciones accidentales en el controlador de texto.
+- Solución    : Eliminar la segunda declaración y reutilizar la variable ya saneada.
+
+
+================================================================================
+7. RECOMENDACIONES GENERALES Y ESTRATÉGICAS (R)
+================================================================================
+
+--------------------------------------------------------------------------------
+R-001: Implementar Cloud Functions para operaciones financieras críticas
+--------------------------------------------------------------------------------
+Las mutaciones de tesorería, liquidación de abonos y condonación de intereses
+deberían residir en un entorno de ejecución seguro del lado del servidor (Firebase
+Cloud Functions) con autenticación verificada. Esto previene la manipulación de
+datos desde clientes móviles alterados y centraliza las reglas contables.
+
+--------------------------------------------------------------------------------
+R-002: Agregar logging estructurado y telemetría
+--------------------------------------------------------------------------------
+Reemplazar `print()` y `debugPrint()` por un sistema de logging estructurado
+(utilizando el paquete `logging` o eventos personalizados en Firebase Crashlytics)
+que permita auditar el flujo de eventos financieros en producción respetando
+la privacidad del usuario.
+
+--------------------------------------------------------------------------------
+R-003: Implementar pista de auditoría inmutable (Audit Trail)
+--------------------------------------------------------------------------------
+Actualmente las eliminaciones y modificaciones sobrescriben o eliminan documentos
+sin dejar trazabilidad. Se recomienda establecer una subcolección append-only
+(`/audit_logs`) donde cada pago creado, editado o revertido registre:
+usuario, timestamp, snapshot previo y motivo de la alteración.
+
+--------------------------------------------------------------------------------
+R-004: Estandarizar el manejo de errores funcionales (Result / Either)
+--------------------------------------------------------------------------------
+Se detecta disparidad en los repositorios: unos relanzan excepciones sin tipar,
+mientras otros atrapan errores y retornan null. Conviene adoptar un modelo
+funcional tipo `Result<T, Failure>` (usando `fpdart` o clases selladas) para
+uniformar el tratamiento de errores en la capa de presentación.
+
+--------------------------------------------------------------------------------
+R-005: Fortalecer validación de datos en el servidor
+--------------------------------------------------------------------------------
+Las reglas actuales de Firestore verifican principalmente la autenticación básica
+pero carecen de validaciones sobre la integridad de los datos (e.g. montos > 0,
+fechas coherentes, estados válidos dentro de listas permitidas). Se deben robustecer
+las restricciones schema-level en `firestore.rules`.
+
+--------------------------------------------------------------------------------
+R-006: Migrar escaneos masivos (autoScanMora) a triggers programados
+--------------------------------------------------------------------------------
+El cálculo diario de mora depende actualmente de que un usuario con privilegios abra
+la app móvil y ejecute el escaneo local. Esto debe delegarse a una Cloud Function
+programada (Cloud Scheduler cron job diario a medianoche) para garantizar la
+aplicación oportuna y homogénea de recargos.
+
+================================================================================
+  FIN DEL INFORME - AUDITORÍA BANX FINANZAS APP
+================================================================================

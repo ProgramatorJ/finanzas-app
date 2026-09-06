@@ -1,0 +1,1290 @@
+================================================================================
+  DOCUMENTACIÓN COMPLETA DE FUNCIONALIDAD - FINANZAS APP (BANX)
+  Generado automáticamente - Septiembre 2026
+  Proyecto Flutter con Firebase Backend
+================================================================================
+
+================================================================================
+TABLA DE CONTENIDOS
+================================================================================
+1. ARQUITECTURA GENERAL
+   1.1 Visión General del Sistema y Stack Tecnológico
+   1.2 Arquitectura en Capas y Estructura del Proyecto
+   1.3 Patrón Repository y Fachada de Acceso a Datos
+   1.4 Control de Acceso Basado en Roles (RBAC)
+   1.5 Motor Financiero: Calendario Comercial 360 y Motor de Mora
+2. PUNTO DE ENTRADA (main.dart)
+   2.1 Función main() y Flujo de Inicialización
+   2.2 Manejo Global de Errores y Telemetría con Crashlytics
+   2.3 Configuración de Notificaciones Nativas y Enrutamiento Global
+   2.4 Widget FinanzasApp y Gestión Dinámica de Temas
+3. CONSTANTES Y ENUMERACIONES
+   3.1 Constantes Globales (AppConstants)
+   3.2 Enumeraciones del Sistema
+4. MODELOS DE DATOS
+   4.1 ClientModel (client_model.dart)
+   4.2 CreditModel (credit_model.dart)
+   4.3 InstallmentModel (installment_model.dart)
+   4.4 PaymentModel (payment_model.dart)
+   4.5 AppointmentModel (appointment_model.dart)
+   4.6 TreasuryModel (treasury_model.dart)
+   4.7 ExpenseModel (expense_model.dart)
+   4.8 InvestmentModel (investment_model.dart)
+   4.9 InvestorPaymentModel (investor_payment_model.dart)
+   4.10 CashAdjustmentModel (cash_adjustment_model.dart)
+   4.11 UserModel (user_model.dart)
+5. REPOSITORIOS
+   5.1 AppointmentsRepository (appointments_repository.dart)
+   5.2 ClientsRepository (clients_repository.dart)
+   5.3 CreditsRepository (credits_repository.dart)
+   5.4 PaymentsRepository (payments_repository.dart)
+   5.5 TreasuryRepository (treasury_repository.dart)
+   5.6 UsersRepository (users_repository.dart)
+6. SERVICIOS
+   6.1 AuthService (auth_service.dart)
+   6.2 FirestoreService (firestore_service.dart)
+   6.3 RBACService (rbac_service.dart)
+   6.4 LocalNotificationService (local_notification_service.dart)
+7. UTILIDADES
+   7.1 CommercialCalendar (commercial_calendar.dart)
+   7.2 MoraEngine (mora_engine.dart)
+8. PANTALLAS DE INTERFAZ DE USUARIO (FEATURES)
+   8.1 Autenticación (AuthGate, LoginScreen)
+   8.2 Tableros / Dashboards (AdminDashboard, CobradorDashboard)
+   8.3 Módulo de Clientes (ClientListScreen, ClientDetailScreen, ClientFormScreen)
+   8.4 Módulo de Créditos (CreditListScreen, CreditFormScreen, CreditDetailScreen)
+   8.5 Módulo de Pagos (PaymentFormScreen, PaymentsHistoryScreen)
+   8.6 Módulo de Citas y Visitas (AppointmentFormDialog, AppointmentsAgendaScreen)
+   8.7 Módulo de Calendario (PaymentCalendarScreen, calendar_providers.dart)
+   8.8 Módulo de Notificaciones y Alertas (AlertCenterWidget)
+   8.9 Módulo de Informes Financieros (ReportsMainScreen, ProfitReportScreen, HistoricalPortfolioReportScreen, BalanceSheetReportScreen, UpcomingPaymentsReportScreen, DisbursementsReportScreen)
+   8.10 Módulo de Configuración (SettingsScreen)
+   8.11 Módulo de Tesorería (TreasuryScreen)
+   8.12 Módulo de Gestión de Usuarios (UserListScreen, UserFormScreen)
+   8.13 Componentes Compartidos y Temas (financial_providers.dart, ResponsiveSidebarScaffold, GlassmorphicContainer, AppTheme, CircuitBackgroundPainter)
+9. REGLAS DE SEGURIDAD FIRESTORE (firestore.rules)
+
+
+================================================================================
+1. ARQUITECTURA GENERAL
+================================================================================
+
+1.1 Visión General del Sistema y Stack Tecnológico
+--------------------------------------------------------------------------------
+Finanzas App (BANX) es una aplicación financiera empresarial desarrollada en 
+Flutter, diseñada para operar de forma multiplataforma (Android, iOS y Web). Su 
+objetivo principal es la gestión integral de cartera crediticia, recaudos en campo, 
+seguimiento de mora en tiempo real bajo normativa comercial, tesorería corporativa 
+e informes contables avanzados.
+
+Componentes tecnológicos centrales:
+- Framework: Flutter (Canal estable)
+- Gestor de Estado: Riverpod (v3.3.1) mediante ConsumerWidget, ConsumerStatefulWidget,
+  Provider, StreamProvider, y StreamProvider.family.
+- Backend como Servicio (BaaS): Google Firebase.
+  * Firebase Authentication: Gestión de credenciales, sesiones y tokens JWT.
+  * Cloud Firestore: Base de datos NoSQL documental con soporte en tiempo real 
+    (Snapshots), transacciones ACID y lotes atómicos (WriteBatch).
+  * Firebase Crashlytics: Monitorización de excepciones en tiempo real con captura
+    de stack traces y alertas visuales al usuario.
+- Notificaciones y Alarmas: Flutter Local Notifications con soporte para zonas
+  horarias (Timezone / tz.TZDateTime) y alarmas de alta precisión en Android.
+- Diseño y Estilos: Google Fonts (Outfit, Inter), diseño adaptativo glassmorphic,
+  soporte estricto de temas Claro y Oscuro con paletas financieras dedicadas.
+
+1.2 Arquitectura en Capas y Estructura del Proyecto
+--------------------------------------------------------------------------------
+El proyecto cuenta con 62 archivos Dart estructurados de manera modular bajo el 
+directorio `lib/`:
+
+- `lib/core/`: Núcleo de la aplicación independiente de la interfaz gráfica.
+  * `constants/`: Constantes del sistema, versiones de esquemas y nombres de colecciones.
+  * `enums/`: 5 enumeraciones que definen tipos y estados del dominio.
+  * `models/`: 11 modelos de datos inmutables basados en Equatable con serialización 
+    y deserialización segura contra Firestore.
+  * `repositories/`: 6 repositorios especializados que encapsulan las consultas y 
+    mutaciones directas a las colecciones de Firestore.
+  * `services/`: 4 servicios transversales (Auth, Fachada Firestore, RBAC y Alarmas).
+  * `utils/`: 2 utilidades matemáticas y de fechas (CommercialCalendar y MoraEngine).
+
+- `lib/features/`: Módulos funcionales organizados por dominio:
+  * `auth/`: Control de acceso y pantalla de autenticación.
+  * `dashboard/`: Paneles principales para administradores y cobradores.
+  * `clients/`: Directorio, ficha técnica y creación/edición de clientes.
+  * `credits/`: Listado, simulador de crédito, amortización y panel detallado.
+  * `payments/`: Registro de abonos en cascada e historial de recibos con exportación.
+  * `appointments/`: Agenda de citas presenciales o llamadas con alarmas nativas.
+  * `calendar/`: Vista de calendario interactivo mensual con estado de cuotas.
+  * `notifications/`: Centro de alertas de vencimientos hoy, mañana y mora.
+  * `reports/`: 5 informes analíticos (ganancias, cartera histórica, balance general, 
+    proyección de pagos y desembolsos).
+  * `settings/`: Configuración de plantillas de WhatsApp y preferencias locales.
+  * `treasury/`: Caja general, administración de inversores y gastos operativos.
+  * `users/`: Gestión de usuarios, perfiles y asignación de clientes a cobradores.
+  * `shared/`: Métricas financieras centralizadas (SSOT) y proveedores comunes.
+
+- `lib/shared/theme/`: Definición de temas claro/oscuro, scaffold adaptativo con barra 
+  lateral (ResponsiveSidebarScaffold) y decoradores gráficos.
+
+1.3 Patrón Repository y Fachada de Acceso a Datos
+--------------------------------------------------------------------------------
+La aplicación implementa el patrón Repository para aislar la lógica de acceso a datos:
+1. Repositorios Específicos: Cada colección principal (`clients`, `credits`, 
+   `payments`, `treasury`, `users`, `appointments`) cuenta con su propia clase 
+   de repositorio inyectada vía Riverpod.
+2. FirestoreService como Fachada: Actúa como punto único y centralizado de acceso a 
+   la capa de persistencia, exponiendo más de 50 métodos que delegan transparentemente 
+   a los repositorios correspondientes. Esta arquitectura permite reemplazar o mockear 
+   repositorios sin alterar la lógica de negocio en las pantallas.
+
+1.4 Control de Acceso Basado en Roles (RBAC)
+--------------------------------------------------------------------------------
+El sistema implementa dos roles principales mediante la enumeración `UserRole`:
+- `admin`: Superusuario con control total sobre todos los clientes, créditos, 
+  parámetros financieros, gestión de usuarios, edición/reversión de pagos, 
+  análisis de tesorería y reportes consolidados.
+- `cobrador`: Usuario operativo en campo con alcance estrictamente limitado a los 
+  clientes que el administrador le haya asignado explícitamente mediante el campo 
+  `assignedCollectorIds`. Solo puede registrar pagos nuevos, consultar su propia agenda 
+  de citas y revisar el historial de recaudos que él mismo ha ingresado.
+
+1.5 Motor Financiero: Calendario Comercial 360 y Motor de Mora
+--------------------------------------------------------------------------------
+- Calendario Comercial (Año 360):
+  Para asegurar consistencia contable y previsibilidad en los ciclos de cobro, el 
+  sistema adopta el estándar bancario comercial donde todos los meses constan de 
+  30 días exactos y el año consta de 360 días. Los días 31 se ignoran y finales de 
+  febrero (28/29) se computan como día 30 para garantizar saltos mensuales homogéneos.
+- MoraEngine y Cascada de Pagos:
+  Implementa un motor determinista de proyección de mora y distribución en cascada 
+  de tres pasos (P1: Mora acumulada, P2: Intereses corrientes y Capital proporcional, 
+  P3: Consolidación de estados y corte de fechas). Cuenta con capacidad de replay 
+  determinista completo para recalculaciones retroactivas.
+
+
+================================================================================
+2. PUNTO DE ENTRADA (main.dart)
+================================================================================
+
+El archivo `lib/main.dart` constituye la raíz del ciclo de vida de la aplicación.
+
+2.1 Función main() y Flujo de Inicialización
+--------------------------------------------------------------------------------
+Firma: `Future<void> main() async`
+Responsabilidades y orden de ejecución:
+1. `WidgetsFlutterBinding.ensureInitialized()`: Asegura que los enlaces de plataforma 
+   estén completamente disponibles antes de interactuar con plugins nativos.
+2. `SharedPreferences.getInstance()`: Inicializa el almacenamiento local en la 
+   variable global `sharedPreferences`.
+3. `initializeDateFormatting('es', null)` e `initializeDateFormatting('es_CO', null)`: 
+   Carga los símbolos y nombres de meses/días en español para el formateo de monedas 
+   y fechas en toda la interfaz.
+4. `Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform)`: Conecta 
+   la aplicación al proyecto de Firebase configurado.
+5. Configuración de Crashlytics para captura de fallos.
+6. `LocalNotificationService().initialize()`: Configura el servicio nativo de alarmas.
+7. `LocalNotificationService.onNotificationTapped`: Define el callback global que 
+   recibe el `clientId` adjunto a la notificación y utiliza `navigatorKey` para navegar 
+   directamente a la pantalla `ClientDetailScreen(clientId: clientId)`.
+8. `runApp(ProviderScope(child: FinanzasApp()))`: Despliega el árbol de widgets 
+   envuelto en el contenedor de estados de Riverpod (`ProviderScope`).
+
+2.2 Manejo Global de Errores y Telemetría con Crashlytics
+--------------------------------------------------------------------------------
+Se configuran dos interceptores globales:
+- `FlutterError.onError`: Intercepta fallos fatales originados en el framework de 
+  Flutter, reportándolos a `FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails)`. 
+  Adicionalmente, si el contexto global de navegación (`navigatorKey.currentContext`) 
+  está disponible, despliega un SnackBar en pantalla: "Ha ocurrido un error inesperado, 
+  el administrador ha sido notificado."
+- `PlatformDispatcher.instance.onError`: Intercepta excepciones asíncronas no capturadas 
+  en la plataforma nativa, reportándolas a `FirebaseCrashlytics.instance.recordError(error, stack, fatal: true)` 
+  y emitiendo el mismo aviso visual en la interfaz.
+
+2.3 Variables Globales
+--------------------------------------------------------------------------------
+- `final GlobalKey<NavigatorState> navigatorKey`: Clave de navegación global que permite 
+  realizar transiciones de pantalla desde servicios desacoplados del árbol de widgets 
+  (como callbacks de notificaciones o interceptores de errores).
+- `late final SharedPreferences sharedPreferences`: Instancia global síncrona para 
+  lectura y escritura de configuraciones locales y caché rápida.
+
+2.4 Widget FinanzasApp
+--------------------------------------------------------------------------------
+Clase: `FinanzasApp extends ConsumerWidget`
+- Propósito: Configurar el `MaterialApp` principal.
+- Observa `ref.watch(themeModeProvider)` para alternar reactivamente entre tema claro 
+  (`AppTheme.lightTheme()`) y tema oscuro (`AppTheme.darkTheme()`).
+- Asigna `navigatorKey: navigatorKey`.
+- Define como pantalla inicial (`home`) el widget `AuthGate`, encargado de la 
+  inspección de sesión y derivación de roles.
+
+
+================================================================================
+3. CONSTANTES Y ENUMERACIONES
+================================================================================
+
+3.1 AppConstants (lib/core/constants/app_constants.dart)
+--------------------------------------------------------------------------------
+Clase contenedora de valores estáticos y parámetros financieros globales:
+- `currentMathSchemaVersion` (int = 3): Versión actual del esquema y lógica matemática 
+  del motor de amortización y mora. Permite ejecutar migraciones automáticas forzadas 
+  cuando un crédito registrado en versiones anteriores es consultado.
+- `defaultMonthlyInterestRate` (double = 0.10): Tasa de interés mensual por defecto (10%).
+- `defaultDailyMoraRate` (double = 0.007): Tasa de mora diaria por defecto (0.7% diario).
+- `defaultCurrency` (String = 'COP'): Moneda base del sistema (Pesos Colombianos).
+- `supportedCurrencies` (List<String> = ['COP', 'USD', 'MXN', 'EUR']): Monedas soportadas.
+- Colecciones de Cloud Firestore:
+  * `usersCollection` = 'users'
+  * `clientsCollection` = 'clients'
+  * `creditsCollection` = 'credits'
+  * `installmentsSubCollection` = 'installments'
+  * `paymentsSubCollection` = 'payments'
+  * `configCollection` = 'appConfig'
+  * `appointmentsCollection` = 'appointments'
+- `globalConfigId` (String = 'global'): Identificador del documento de configuración global.
+
+3.2 Enumeraciones del Sistema
+--------------------------------------------------------------------------------
+
+1. `AdjustmentType` (lib/core/enums/adjustment_type.dart)
+   - Valores: `ingreso`, `egreso`
+   - Método: `static AdjustmentType fromString(String type)`: Convierte cadenas de texto 
+     a la enumeración, retornando `AdjustmentType.ingreso` por defecto.
+
+2. `CreditStatus` (lib/core/enums/credit_status.dart)
+   - Valores:
+     * `active`: Crédito en curso con cuotas pendientes o al día.
+     * `completed`: Crédito totalmente cancelado (saldo pendiente 0 y sin mora).
+     * `defaulted`: Crédito en mora (alguna cuota superó su fecha límite).
+     * `restructured`: Crédito sujeto a refinanciación o reestructuración.
+   - Método: `static CreditStatus fromString(String status)`: Por defecto `CreditStatus.active`.
+
+3. `PaymentFrequency` (lib/core/enums/payment_frequency.dart)
+   - Valores:
+     * `weekly`: Pagos cada 7 días naturales.
+     * `biweekly`: Pagos cada 15 días comerciales.
+     * `monthly`: Pagos cada 30 días comerciales.
+   - Método: `static PaymentFrequency fromString(String freq)`: Por defecto `PaymentFrequency.monthly`.
+
+4. `PaymentMethod` (lib/core/enums/payment_method.dart)
+   - Valores: `efectivo`, `transferencia`, `consignacion`
+   - Método: `static PaymentMethod fromString(String method)`: Por defecto `PaymentMethod.efectivo`.
+
+5. `PaymentMethod` (lib/core/models/payment_model.dart) [DUPLICADO EN MODELO]
+   - Valores: `cash`, `transfer`, `other`
+   - Método: `static PaymentMethod fromString(String method)`: Por defecto `PaymentMethod.cash`.
+   - Nota arquitectónica: Existe esta definición paralela dentro de `payment_model.dart` 
+     orientada a compatibilidad con registros históricos y pasarelas en inglés.
+
+6. `UserRole` (lib/core/enums/user_role.dart)
+   - Valores: `admin`, `cobrador`
+   - Método: `static UserRole fromString(String role)`: Por defecto `UserRole.cobrador`.
+
+7. `InstallmentStatus` (lib/core/models/installment_model.dart)
+   - Valores:
+     * `pending`: Cuota emitida sin pagos y dentro de la fecha de vencimiento.
+     * `partial`: Cuota con abonos parciales que no cubren la totalidad del monto programado.
+     * `paid`: Cuota cancelada al 100% (capital, interés y mora asociada).
+     * `overdue`: Cuota cuya fecha de vencimiento ha sido superada y genera mora diaria.
+     * `consolidated`: Cuota fusionada mediante mecanismo de refinanciación.
+   - Método: `static InstallmentStatus fromString(String status)`: Por defecto `InstallmentStatus.pending`.
+
+8. `AppointmentType` (lib/core/models/appointment_model.dart)
+   - Valores: `visit` (visita presencial), `call` (llamada telefónica)
+   - Método: `static AppointmentType fromString(String type)`: Por defecto `AppointmentType.visit`.
+
+9. `InvestmentStatus` (lib/core/models/investment_model.dart)
+   - Valores: `active` (inversión con saldo pendiente), `completed` (capital devuelto al 100%)
+   - Método: `static InvestmentStatus fromString(String status)`: Por defecto `InvestmentStatus.active`.
+
+10. `InvestorPaymentConcept` (lib/core/models/investor_payment_model.dart)
+    - Valores: `interestPayment` (pago de rendimiento/interés), `principalReturn` (devolución de capital)
+    - Método: `static InvestorPaymentConcept fromString(String concept)`: Por defecto `InvestorPaymentConcept.interestPayment`.
+
+
+================================================================================
+4. MODELOS DE DATOS
+================================================================================
+
+Todos los modelos de datos son inmutables, extienden de `Equatable` para comparaciones 
+eficientes de estado en memoria y cuentan con constructores estándar, `factory fromMap`, 
+método `toMap` y `copyWith`.
+
+--------------------------------------------------------------------------------
+4.1 ClientModel (lib/core/models/client_model.dart)
+--------------------------------------------------------------------------------
+Representa un cliente registrado en la plataforma.
+
+Campos:
+- `clientId` (String): Identificador único del cliente (ID de Firestore).
+- `fullName` (String): Nombre y apellidos completos del cliente.
+- `idNumber` (String): Documento de identidad / Cédula / DNI.
+- `phone` (String): Número telefónico principal de contacto.
+- `address` (String): Dirección física de residencia o negocio.
+- `assignedCollectorIds` (List<String>): Lista de UIDs de cobradores autorizados.
+- `createdByUid` (String): UID del usuario que dio de alta el registro.
+- `isActive` (bool): Estado operativo del cliente.
+- `createdAt` (DateTime): Fecha y hora de creación.
+- `updatedAt` (DateTime): Fecha y hora de la última modificación.
+
+Constructores y Métodos:
+- `ClientModel({...})`: Constructor con todos los parámetros obligatorios.
+- `factory ClientModel.fromMap(Map<String, dynamic> map, String documentId)`: 
+  Deserializa desde Firestore convirtiendo `Timestamp` a `DateTime` y listas dinámicas a `List<String>`.
+- `Map<String, dynamic> toMap()`: Serializa a mapa omitiendo `clientId` y convirtiendo fechas a `Timestamp`.
+- `ClientModel copyWith({...})`: Genera una copia con campos modificados opcionalmente.
+- `List<Object?> get props`: Retorna todos los 10 campos para verificación de igualdad.
+
+--------------------------------------------------------------------------------
+4.2 CreditModel (lib/core/models/credit_model.dart)
+--------------------------------------------------------------------------------
+Representa un crédito financiero otorgado a un cliente.
+
+Campos (~30 campos):
+- `creditId` (String): ID único del crédito en Firestore.
+- `clientId` (String): ID del cliente propietario.
+- `createdByUid` (String): UID del creador del crédito.
+- `assignedCollectorIds` (List<String>): Cobradores con acceso al crédito (heredado del cliente).
+- `principalAmount` (double): Monto de capital prestado.
+- `monthlyInterestRate` (double): Tasa mensual de interés corriente (ej. 0.10).
+- `dailyMoraRate` (double): Tasa de mora diaria aplicable por atrasos (ej. 0.007).
+- `termInMonths` (int): Plazo de duración pactado en meses.
+- `paymentFrequency` (PaymentFrequency): Frecuencia (`weekly`, `biweekly`, `monthly`).
+- `totalInterest` (double): Total de intereses proyectados a devengar.
+- `totalAmount` (double): Monto total pactado (`principalAmount` + `totalInterest`).
+- `installmentAmount` (double): Cuota periódica uniforme programada.
+- `numberOfInstallments` (int): Cantidad total de cuotas calculadas.
+- `disbursementDate` (DateTime): Fecha del desembolso del dinero.
+- `firstInstallmentDate` (DateTime): Fecha de vencimiento de la primera cuota.
+- `status` (CreditStatus): Estado actual (`active`, `completed`, `defaulted`, `restructured`).
+- `paidInstallments` (int): Número de cuotas completamente saldadas.
+- `totalPaid` (double): Dinero total abonado acumulado.
+- `totalPaidPrincipal` (double): Total abonado aplicado a capital.
+- `totalPaidInterest` (double): Total abonado aplicado a intereses corrientes.
+- `totalPaidMora` (double): Total abonado aplicado a mora acumulada.
+- `outstandingBalance` (double): Saldo total de deuda pendiente por capital e intereses.
+- `currentConsolidatedDebt` (double): Deuda consolidada acumulada por atrasos.
+- `accumulatedMora` (double): Mora acumulada pendiente a la fecha.
+- `notes` (String?): Observaciones o anotaciones adicionales.
+- `createdAt` (DateTime): Fecha de registro en base de datos.
+- `updatedAt` (DateTime): Fecha de última actualización.
+- `schemaVersion` (int, default 1): Versión matemática con la que fue estructurado el crédito.
+
+Constructores y Métodos:
+- `CreditModel({...})`: Constructor con valores por defecto para colecciones y versión.
+- `factory CreditModel.fromMap(Map<String, dynamic> map, String documentId)`: Deserializador.
+- `Map<String, dynamic> toMap()`: Serializador a mapa de Firestore con `Timestamp`.
+- `CreditModel copyWith({...})`: Generador de copias inmutables.
+- `List<Object?> get props`: Lista de campos para Equatable (excluye deliberadamente `schemaVersion` para no invalidar igualdad en migraciones transparentes).
+
+--------------------------------------------------------------------------------
+4.3 InstallmentModel (lib/core/models/installment_model.dart)
+--------------------------------------------------------------------------------
+Representa una cuota individual perteneciente a la subcolección `credits/{id}/installments`.
+
+Campos (~26 campos):
+- `installmentId` (String): ID del documento de la cuota.
+- `creditId` (String?): ID del crédito al cual pertenece.
+- `installmentNumber` (int): Número correlativo de cuota (1, 2, 3...).
+- `dueDate` (DateTime): Fecha límite de pago de la cuota.
+- `principalPortion` (double): Monto de la cuota destinado a amortizar capital.
+- `interestPortion` (double): Monto de la cuota correspondiente a interés corriente.
+- `scheduledAmount` (double): Valor total programado (`principalPortion` + `interestPortion`).
+- `status` (InstallmentStatus): Estado (`pending`, `partial`, `paid`, `overdue`, `consolidated`).
+- `paidAmount` (double): Monto efectivamente pagado de la cuota.
+- `remainingAmount` (double): Saldo faltante para cubrir el monto programado.
+- `isMoraActive` (bool): Bandera que indica si la cuota está causando mora actualmente.
+- `moraStartDate` (DateTime?): Fecha a partir de la cual se liquida la mora.
+- `dailyMoraRate` (double): Tasa de mora diaria copiada del crédito.
+- `moraBase` (double): Base económica sobre la cual se calcula la mora diaria.
+- `accumulatedMora` (double): Mora total acumulada calculada para esta cuota.
+- `moraPaid` (double): Mora que ya fue cobrada y satisfecha en esta cuota.
+- `isMoraExempt` (bool, default false): Bandera de condonación o exención de mora.
+- `isConsolidated` (bool): Indica si fue absorbida por consolidación.
+- `consolidatedIntoInstallment` (int?): Cuota en la que se consolidó.
+- `consolidationDate` (DateTime?): Fecha en que se consolidó.
+- `createdAt` (DateTime): Creación del documento.
+- `updatedAt` (DateTime): Modificación del documento.
+- `alarmHour` (int, default 9): Hora configurada para la alarma nativa (0-23).
+- `alarmMinute` (int, default 0): Minuto configurado para la alarma nativa (0-59).
+- `isAlarmEnabled` (bool, default true): Alarma nativa activada o desactivada.
+- `isAlarmSilent` (bool, default false): Alarma silenciosa (baja prioridad) o con sonido/vibración.
+
+Constructores y Métodos:
+- `InstallmentModel({...})`: Constructor completo con valores predeterminados para alarmas y exención.
+- `factory InstallmentModel.fromMap(Map<String, dynamic> map, String documentId, {String? creditId})`: Deserializador.
+- `Map<String, dynamic> toMap()`: Serializador completo.
+- `InstallmentModel copyWith({...})`: Generador de copias.
+- `List<Object?> get props`: Todos los atributos para comparación de estado.
+
+--------------------------------------------------------------------------------
+4.4 PaymentModel (lib/core/models/payment_model.dart)
+--------------------------------------------------------------------------------
+Representa un pago o abono recibido, ubicado en `credits/{id}/payments`.
+
+Campos:
+- `paymentId` (String): ID del abono.
+- `creditId` (String?): ID del crédito abonado.
+- `registeredByUid` (String): UID del usuario (admin o cobrador) que recibió el pago.
+- `paymentDate` (DateTime): Fecha del abono (seleccionable por admin).
+- `amountReceived` (double): Monto total de dinero en efectivo o transferencia recibido.
+- `appliedToMora` (double): Fracción del abono consumida en mora acumulada (P1).
+- `appliedToInterest` (double): Fracción consumida en intereses corrientes (P2).
+- `appliedToPrincipal` (double): Fracción consumida en amortización a capital (P3).
+- `affectedInstallmentNumbers` (List<int>): Cuotas que recibieron abono.
+- `installmentBreakdowns` (Map<String, Map<String, double>>): Detalle por cuota afectada 
+  con claves 'mora', 'interes' y 'capital'.
+- `paymentMethod` (PaymentMethod): Método utilizado (`cash`, `transfer`, `other`).
+- `receiptNumber` (String?): Consecutivo o comprobante de recibo opcional.
+- `notes` (String?): Comentarios u observaciones del pago.
+- `createdAt` (DateTime): Marca de tiempo del registro.
+
+Constructores y Métodos:
+- `PaymentModel({...})`: Constructor inmutable.
+- `factory PaymentModel.fromMap(...)`: Deserializador con parsing de mapas anidados.
+- `Map<String, dynamic> toMap()`: Serializador.
+- `PaymentModel copyWith(...)`: Clonador con modificaciones (no incluye installmentBreakdowns).
+- `List<Object?> get props`: Comparador Equatable (no incluye installmentBreakdowns).
+
+--------------------------------------------------------------------------------
+4.5 AppointmentModel (lib/core/models/appointment_model.dart)
+--------------------------------------------------------------------------------
+Representa una cita o compromiso de cobro programado con un cliente.
+
+Campos:
+- `appointmentId` (String): ID de la cita.
+- `clientId` (String): ID del cliente agendado.
+- `clientName` (String): Nombre del cliente al momento de agendar.
+- `collectorUid` (String): UID del cobrador asignado para la visita o llamada.
+- `scheduledTime` (DateTime): Fecha y hora exacta programada.
+- `type` (AppointmentType): Tipo de cita (`visit`, `call`).
+- `notes` (String): Instrucciones, direcciones o detalles.
+- `isCompleted` (bool): Estado de cumplimiento.
+- `creditId` (String?): Crédito vinculado opcional.
+- `createdAt` (DateTime): Fecha de registro.
+- `updatedAt` (DateTime): Última actualización.
+
+--------------------------------------------------------------------------------
+4.6 TreasuryModel (lib/core/models/treasury_model.dart)
+--------------------------------------------------------------------------------
+Representa el estado financiero consolidado de la caja principal (`treasury/main`).
+
+Campos:
+- `currentBalance` (double): Saldo disponible actual en caja líquida.
+- `totalExpenses` (double): Gastos operativos acumulados históricos.
+- `totalInterestsEarned` (double): Intereses corrientes recaudados acumulados.
+- `totalMoraEarned` (double): Mora total cobrada acumulada.
+- `totalInvestmentsReceived` (double): Fondos totales inyectados por inversores.
+- `totalReturnedToInvestors` (double): Capital reembolsado a inversores.
+- `totalInterestPaidToInvestors` (double): Intereses/rentabilidad pagada a inversores.
+- `lastUpdated` (DateTime): Fecha de la última actualización contable.
+
+Métodos especiales:
+- `factory TreasuryModel.empty()`: Retorna una instancia con todas las métricas en 0.0 y fecha actual.
+
+--------------------------------------------------------------------------------
+4.7 ExpenseModel (lib/core/models/expense_model.dart)
+--------------------------------------------------------------------------------
+Representa un egreso o gasto operativo en la colección `expenses`.
+
+Campos:
+- `expenseId` (String): ID del documento.
+- `amount` (double): Monto del gasto.
+- `category` (String): Categoría ('Papelería', 'Transporte', 'Viáticos', 'Nómina', etc.).
+- `description` (String): Justificación o detalle del gasto.
+- `date` (DateTime): Fecha en la que ocurrió el gasto.
+- `createdBy` (String): Usuario que registró el gasto.
+
+--------------------------------------------------------------------------------
+4.8 InvestmentModel (lib/core/models/investment_model.dart)
+--------------------------------------------------------------------------------
+Representa una inversión de capital de un tercero o socio en la colección `investments`.
+
+Campos:
+- `investmentId` (String): ID del registro.
+- `investorName` (String): Nombre o razón social del inversionista.
+- `amount` (double): Capital aportado originalmente.
+- `monthlyInterestRate` (double): Tasa mensual pactada de rentabilidad (0.0 si es aporte propio).
+- `totalInterestPaid` (double): Acumulado de intereses pagados al inversor.
+- `totalPrincipalReturned` (double): Acumulado de capital reembolsado al inversor.
+- `outstandingBalance` (double): Saldo pendiente por devolver (`amount` - `totalPrincipalReturned`).
+- `status` (InvestmentStatus): Estado (`active`, `completed`).
+- `notes` (String?): Condiciones de la inversión.
+- `createdAt` (DateTime), `updatedAt` (DateTime).
+
+--------------------------------------------------------------------------------
+4.9 InvestorPaymentModel (lib/core/models/investor_payment_model.dart)
+--------------------------------------------------------------------------------
+Representa un pago realizado a un inversor en `investments/{id}/investor_payments`.
+
+Campos:
+- `paymentId` (String): ID del pago.
+- `investmentId` (String): ID de la inversión asociada.
+- `amount` (double): Valor monetario pagado.
+- `concept` (InvestorPaymentConcept): Concepto (`interestPayment` o `principalReturn`).
+- `notes` (String?): Detalles adicionales.
+- `paymentDate` (DateTime): Fecha de desembolso al inversor.
+- `createdAt` (DateTime): Registro en sistema.
+
+--------------------------------------------------------------------------------
+4.10 CashAdjustmentModel (lib/core/models/cash_adjustment_model.dart)
+--------------------------------------------------------------------------------
+Representa una corrección manual o arqueo de caja en `cash_adjustments`.
+
+Campos:
+- `adjustmentId` (String): ID del ajuste.
+- `amount` (double): Monto (positivo para ingreso extra, negativo para egreso/faltante).
+- `description` (String): Motivo de la corrección de caja.
+- `date` (DateTime): Fecha efectiva del ajuste.
+- `createdBy` (String): Usuario que autorizó el ajuste.
+- `createdAt` (DateTime): Fecha de ingreso al sistema.
+
+--------------------------------------------------------------------------------
+4.11 UserModel (lib/core/models/user_model.dart)
+--------------------------------------------------------------------------------
+Representa un operador o usuario del sistema en `users/{uid}`.
+
+Campos:
+- `uid` (String): ID del usuario correspondiente al UID de Firebase Auth.
+- `email` (String): Correo electrónico de acceso.
+- `displayName` (String): Nombre y apellido del operador.
+- `role` (UserRole): Rol asignado (`admin` o `cobrador`). Si el correo es 'admin@gestor.com' 
+  o el mapa contiene `isAdmin == true`, se fuerza automáticamente `UserRole.admin`.
+- `assignedClientIds` (List<String>): Lista de IDs de clientes asignados (si es cobrador).
+- `isActive` (bool): Habilita o deshabilita el acceso al sistema.
+- `canViewAllClientPayments` (bool, default false): Permiso especial para cobradores.
+- `canViewOtherClients` (bool, default false): Permiso de visibilidad extendida.
+- `canViewOtherTreasury` (bool, default false): Permiso de lectura de tesorería.
+- `createdAt` (DateTime), `updatedAt` (DateTime).
+
+
+================================================================================
+5. REPOSITORIOS
+================================================================================
+
+--------------------------------------------------------------------------------
+5.1 AppointmentsRepository (lib/core/repositories/appointments_repository.dart)
+--------------------------------------------------------------------------------
+Provider: `appointmentsRepositoryProvider`
+Colección: `appointments`
+
+Métodos:
+- `Future<String> createAppointment(AppointmentModel appointment)`:
+  Inserta un nuevo documento con los datos de la cita mediante `add()`. Retorna el ID generado.
+- `Future<void> updateAppointmentStatus(String appointmentId, bool isCompleted)`:
+  Actualiza atómicamente el estado de cumplimiento `isCompleted` y asigna `updatedAt: FieldValue.serverTimestamp()`.
+- `Future<void> deleteAppointment(String appointmentId)`:
+  Elimina físicamente el documento de la cita por su ID.
+- `Stream<List<AppointmentModel>> getAllAppointmentsStream()`:
+  Retorna un stream en tiempo real con todas las citas ordenadas cronológicamente por `scheduledTime` ascendente.
+- `Stream<List<AppointmentModel>> getCollectorAppointmentsStream(String collectorUid)`:
+  Filtra mediante query `where('collectorId', isEqualTo: collectorUid)` y ordena los resultados en memoria por `scheduledTime`.
+
+--------------------------------------------------------------------------------
+5.2 ClientsRepository (lib/core/repositories/clients_repository.dart)
+--------------------------------------------------------------------------------
+Provider: `clientsRepositoryProvider`
+Colección: `clients`
+
+Métodos:
+- `Stream<List<ClientModel>> getClientsStream({int limit = 10000})`:
+  Retorna el listado completo de clientes ordenados por fecha de registro descendente.
+- `Stream<List<ClientModel>> getAssignedClientsStream(String collectorUid, {int limit = 10000})`:
+  Retorna clientes filtrados mediante `where('assignedCollectorIds', arrayContains: collectorUid)`.
+- `Future<String> createClient(ClientModel client)`:
+  Genera una nueva referencia con ID automático, inyecta `createdAt` y `updatedAt` mediante `FieldValue.serverTimestamp()` y persiste el documento.
+- `Future<void> updateClient(String clientId, Map<String, dynamic> data)`:
+  Aplica una actualización parcial de campos al cliente y actualiza `updatedAt`.
+- `Future<void> deleteClient(String clientId)`:
+  Ejecuta la eliminación física del documento en Firestore.
+
+--------------------------------------------------------------------------------
+5.3 CreditsRepository (lib/core/repositories/credits_repository.dart)
+--------------------------------------------------------------------------------
+Provider: `creditsRepositoryProvider`
+Colección: `credits`, Subcolección: `credits/{id}/installments`
+
+Métodos:
+- `Stream<List<CreditModel>> getAllCreditsStream({int limit = 10000})`:
+  Stream de todos los créditos en orden cronológico inverso (`createdAt` desc).
+- `Stream<List<CreditModel>> getAssignedCreditsStream(String collectorUid, {int limit = 10000})`:
+  Filtra créditos mediante `where('assignedCollectorIds', arrayContains: collectorUid)`.
+- `Stream<List<CreditModel>> getClientCreditsStream(String clientId)`:
+  Retorna los créditos asociados a un cliente específico filtrando por `clientId`.
+- `Future<String> createCredit(CreditModel credit)`:
+  Consulta el documento del cliente en `clients` para extraer su lista actual de `assignedCollectorIds`, 
+  la inyecta en el crédito para consistencia en consultas de seguridad, asigna marcas de tiempo de servidor y persiste el documento.
+- `Future<void> updateCredit(String creditId, Map<String, dynamic> data)` / `updateCreditFields(...)`:
+  Actualiza campos específicos del crédito y sella `updatedAt`.
+- `Future<void> deleteCredit(String creditId)`:
+  Elimina físicamente el documento principal del crédito.
+- `Stream<List<InstallmentModel>> getInstallmentsStream(String creditId)`:
+  Escucha en tiempo real la subcolección `installments` de un crédito y la ordena en memoria por `installmentNumber`.
+- `Stream<List<InstallmentModel>> getAllInstallmentsStream()`:
+  Ejecuta una consulta de grupo de colecciones (`collectionGroup('installments')`) para reportes y calendarios globales.
+- `Future<void> createInstallments(String creditId, List<InstallmentModel> installments)`:
+  Inserta atómicamente una lista de cuotas mediante un `WriteBatch`, inyectando `createdAt` y `updatedAt`.
+- `Future<void> updateInstallment(String creditId, InstallmentModel installment)`:
+  Reemplaza por completo el documento de la cuota con `installment.toMap()`.
+- `Future<void> updateInstallmentFields(String creditId, String installmentId, Map<String, dynamic> data)`:
+  Actualiza campos puntuales en el documento de la cuota (por ejemplo exención de mora o configuración de alarmas).
+- `Future<void> deleteInstallment(String creditId, String installmentId)`:
+  Elimina una cuota específica de la subcolección.
+- `Future<void> autoScanMora()`:
+  MÉTODO DE AUDITORÍA AUTOMÁTICA. Realiza una búsqueda de todos los créditos con estado `active`, 
+  inspecciona sus cuotas con estado `pending` y comprueba si la fecha de hoy supera la fecha de vencimiento (`dueDate`). 
+  Si detecta atrasos en al menos una cuota, dispara de forma transparente el método `recalculateCreditHistory(credit.creditId)`.
+- `Future<void> recalculateCreditHistory(String creditId)`:
+  MÉTODO CRÍTICO DE RECONSTRUCCIÓN DETERMINISTA. Ejecuta una recomputación total:
+  1. Lee el crédito en Firestore. Si no existe, finaliza.
+  2. Lee todas las cuotas actuales. Si la cantidad de cuotas difiere del valor `numberOfInstallments` del crédito, 
+     crea nuevas cuotas o elimina las sobrantes.
+  3. Regenera las fechas de vencimiento precisas mediante `CommercialCalendar.generateInstallmentDates`.
+  4. Recalcula las porciones estándar de capital e interés (`principalPortion` e `interestPortion`), 
+     asignando cualquier residuo por redondeo a la última cuota.
+  5. Restablece cada cuota a su estado base original (saldo completo, pagado 0, sin mora activa, estado pending).
+  6. Lee todos los abonos históricos del crédito desde `payments` y los ordena cronológicamente por `paymentDate`.
+  7. Itera secuencialmente sobre cada pago aplicando `MoraEngine.updateMoraAndConsolidations` hasta la fecha de ese pago 
+     y distribuye el dinero con `MoraEngine.applyPaymentCascade`. Actualiza el desglose (`breakdowns`) de cada pago.
+  8. Proyecta la mora final de las cuotas restantes hasta la fecha de hoy (`DateTime.now()`).
+  9. Recalcula los totales del crédito (`totalPaid`, `totalPaidPrincipal`, `totalPaidInterest`, `totalPaidMora`, 
+     `outstandingBalance`, `paidInstallments`, `accumulatedMora`, `status`).
+  10. Confirma todas las cuotas, pagos y crédito en una sola operación atómica con `WriteBatch.commit()`.
+
+--------------------------------------------------------------------------------
+5.4 PaymentsRepository (lib/core/repositories/payments_repository.dart)
+--------------------------------------------------------------------------------
+Provider: `paymentsRepositoryProvider`
+Colecciones: `credits/{id}/payments`, `credits/{id}/installments`, `treasury/main`
+
+Métodos:
+- `Future<void> registerPaymentTransaction({required String creditId, required PaymentModel payment, required double dailyMoraRate})`:
+  TRANSACCIÓN ATÓMICA DE PAGO EN FIRESTORE (`runTransaction`):
+  1. Adquiere bloqueo de lectura sobre el crédito y sobre todas sus cuotas.
+  2. Normaliza la fecha del pago seleccionada por el usuario.
+  3. Proyecta la mora acumulada de las cuotas hasta la fecha del abono mediante `MoraEngine.updateMoraAndConsolidations`.
+  4. Aplica el dinero en cascada mediante `MoraEngine.applyPaymentCascade`.
+  5. Escribe el documento del nuevo pago en la subcolección `payments` con el desglose exacto por cuota (`installmentBreakdowns`).
+  6. Sobrescribe el estado de cada cuota afectada o recalculada.
+  7. Actualiza los contadores y saldos globales del crédito (`totalPaid`, `totalPaidPrincipal`, `totalPaidInterest`, 
+     `totalPaidMora`, `outstandingBalance`, `paidInstallments`, `status`, `accumulatedMora`).
+  8. Impacta atómicamente la tesorería en `treasury/main`, incrementando `currentBalance` con el dinero recibido, 
+     `totalInterestsEarned` con la porción aplicada a intereses y `totalMoraEarned` con la porción aplicada a mora.
+- `Stream<List<PaymentModel>> getPaymentsStream(String creditId)`:
+  Stream de pagos de un crédito ordenados por `paymentDate` descendente.
+- `Stream<List<PaymentModel>> getAllPaymentsStream({int limit = 10000})`:
+  Stream global de pagos en toda la base de datos (`collectionGroup('payments')`).
+- `Stream<List<PaymentModel>> getCollectorPaymentsStream(String collectorUid, {int limit = 10000})`:
+  Stream de pagos registrados específicamente por el cobrador indicado.
+- `Future<void> forceRebuildAndMigrateCredit(String creditId)`:
+  MIGRACIÓN FORZADA DE ESQUEMA MATEMÁTICO:
+  Verifica si `credit.schemaVersion` es inferior a `AppConstants.currentMathSchemaVersion`. Si es inferior, 
+  ejecuta una transacción que reinicia las cuotas a su estado base, vuelve a reproducir en orden cronológico todos 
+  los pagos existentes mediante el nuevo motor matemático, actualiza el estado del crédito y marca 
+  `schemaVersion: AppConstants.currentMathSchemaVersion`.
+- `Future<void> deletePayment(String creditId, String paymentId)`:
+  REVERSIÓN ATÓMICA DE PAGO:
+  1. Ejecuta una transacción de Firestore (`runTransaction`).
+  2. Lee el pago a eliminar y el documento del crédito.
+  3. Descuenta del crédito los montos aportados por ese pago.
+  4. Restablece todas las cuotas a su condición virgen inicial.
+  5. Lee todos los pagos restantes (excluyendo el eliminado) ordenados por fecha.
+  6. Reproduce secuencialmente cada uno de los pagos restantes a través de `MoraEngine`.
+  7. Proyecta la mora restante a la fecha actual y redefine el estado del crédito.
+  8. Revierte el impacto en `treasury/main`: decrementa `currentBalance`, `totalInterestsEarned` y `totalMoraEarned`.
+  9. Elimina físicamente el documento del pago en Firestore.
+- `Future<void> updatePaymentFields(String creditId, String paymentId, Map<String, dynamic> data)`:
+  Permite al administrador editar campos de un pago (como fecha, monto o método) y actualiza `updatedAt`.
+
+--------------------------------------------------------------------------------
+5.5 TreasuryRepository (lib/core/repositories/treasury_repository.dart)
+--------------------------------------------------------------------------------
+Provider: `treasuryRepositoryProvider`
+Colecciones: `treasury/main`, `expenses`, `investments`, `investments/{id}/investor_payments`, `cash_adjustments`
+Total de métodos: 18 operaciones transaccionales y de consulta:
+
+1. `Future<String> registerExpenseTransaction(ExpenseModel expense)`:
+   Inserta el gasto en `expenses` y atómicamente decrementa `currentBalance` e incrementa `totalExpenses` en `treasury/main`.
+2. `Future<void> updateExpense(ExpenseModel oldExp, ExpenseModel newExp)`:
+   Calcula la diferencia económica (`diff = new - old`), actualiza el gasto y ajusta el saldo y total de gastos en tesorería.
+3. `Future<void> deleteExpense(String expenseId, double amount)`:
+   Elimina el gasto y reintegra el monto a `currentBalance`, restándolo de `totalExpenses`.
+4. `Stream<TreasuryModel> getTreasuryStream()`:
+   Escucha el documento `treasury/main`. Si no existe, retorna `TreasuryModel.empty()`.
+5. `Stream<List<ExpenseModel>> getExpensesStream()`:
+   Retorna los gastos ordenados por fecha descendente.
+6. `Future<String> registerInvestmentTransaction(InvestmentModel investment)`:
+   Registra una nueva inversión y en la misma operación atómica incrementa `currentBalance` y `totalInvestmentsReceived`.
+7. `Future<void> updateInvestment(InvestmentModel oldInv, InvestmentModel newInv)`:
+   Calcula la diferencia de capital inyectado y ajusta `currentBalance` y `totalInvestmentsReceived`.
+8. `Future<void> deleteInvestment(String investmentId, double amount)`:
+   Elimina la inversión, elimina en cascada todos sus pagos a inversores en la subcolección `investor_payments` 
+   y revierte completamente los impactos de capital e intereses en tesorería.
+9. `Future<void> registerInvestorPaymentTransaction({required String investmentId, required InvestorPaymentModel payment})`:
+   Registra el pago al inversor. Si el concepto es `interestPayment`, incrementa `totalInterestPaid` en la inversión, 
+   resta dinero de `currentBalance` e incrementa `totalInterestPaidToInvestors`. Si es `principalReturn`, incrementa 
+   `totalPrincipalReturned`, reduce `outstandingBalance` de la inversión, resta dinero de `currentBalance` e incrementa 
+   `totalReturnedToInvestors`.
+10. `Future<void> deleteInvestorPaymentTransaction({required String investmentId, required InvestorPaymentModel payment})`:
+    Revierte el pago al inversor, restaurando el saldo de caja y los acumulados de capital o intereses.
+11. `Future<void> updateInvestorPaymentTransaction({required String investmentId, required InvestorPaymentModel oldPayment, required InvestorPaymentModel newPayment})`:
+    Ajuste diferencial con soporte para cambio de monto y cambio de concepto entre interés y capital.
+12. `Future<void> completeInvestment(String investmentId)`:
+    Marca la inversión como `completed` y fija `outstandingBalance` en 0.0.
+13. `Stream<List<InvestmentModel>> getInvestmentsStream()`:
+    Retorna inversiones ordenadas por `createdAt` descendente.
+14. `Stream<List<InvestorPaymentModel>> getInvestorPaymentsStream(String investmentId)`:
+    Stream de pagos de una inversión específica ordenados por `paymentDate` descendente.
+15. `Stream<List<InvestorPaymentModel>> getAllInvestorPaymentsStream()`:
+    Consulta global `collectionGroup('investor_payments')` ordenada por fecha.
+16. `Future<String> registerCashAdjustment(CashAdjustmentModel adjustment)`:
+    Registra un ajuste de caja en `cash_adjustments` y ajusta `currentBalance` en tesorería con el valor indicado (positivo o negativo).
+17. `Stream<List<CashAdjustmentModel>> getCashAdjustmentsStream()`:
+    Retorna los ajustes de caja ordenados por fecha descendente.
+18. `Future<void> deleteCashAdjustment(String adjustmentId, double amount)`:
+    Elimina el ajuste de caja y aplica la operación inversa sobre `currentBalance` en `treasury/main`.
+
+--------------------------------------------------------------------------------
+5.5 UsersRepository (lib/core/repositories/users_repository.dart)
+--------------------------------------------------------------------------------
+Provider: `usersRepositoryProvider`
+Colección: `users`
+
+Métodos:
+- `Future<void> setUser(UserModel user)`:
+  Crea o actualiza el documento del usuario en la ruta `users/{uid}`.
+- `Future<UserModel?> getUser(String uid)`:
+  Lectura puntual del perfil del usuario por su UID. Retorna null si no existe.
+- `Stream<List<UserModel>> getAllUsersStream()`:
+  Stream de todos los usuarios registrados en el sistema.
+- `Stream<List<UserModel>> getCollectorsStream()`:
+  Filtra usuarios activos con rol de cobrador (`where('role', isEqualTo: 'cobrador')` y `where('isActive', isEqualTo: true)`).
+
+
+================================================================================
+6. SERVICIOS
+================================================================================
+
+--------------------------------------------------------------------------------
+6.1 AuthService (lib/core/services/auth_service.dart)
+--------------------------------------------------------------------------------
+Providers:
+- `authServiceProvider`: Provee la instancia del servicio `AuthService`.
+- `authStateProvider`: StreamProvider reactivo que expone el `User?` actualmente autenticado.
+
+Métodos:
+- `Stream<User?> get authStateChanges`: Stream nativo de cambios de sesión de Firebase Auth.
+- `User? get currentUser`: Getter del usuario actual.
+- `Future<UserCredential> signInWithEmailAndPassword({required String email, required String password})`:
+  Limpia espacios en el correo y autentica contra Firebase Auth. Lanza `FirebaseAuthException` en caso de error.
+- `Future<void> signOut()`: Cierra la sesión activa.
+- `Future<UserCredential> createUserWithEmailAndPassword({required String email, required String password})`:
+  Crea un nuevo usuario en Firebase Auth (utilizado por el administrador al registrar cobradores).
+- `Future<void> sendPasswordResetEmail(String email)`:
+  Envía el enlace de recuperación de contraseña al correo especificado.
+
+--------------------------------------------------------------------------------
+6.2 FirestoreService (lib/core/services/firestore_service.dart)
+--------------------------------------------------------------------------------
+Provider: `firestoreServiceProvider`
+Patrón Arquitectónico: Fachada unificada (Facade Pattern).
+Inyecta los 6 repositorios y expone más de 50 métodos:
+- Clientes: `createClient`, `updateClient`, `getAllClientsStream`, `getAssignedClientsStream`, `deleteClient`.
+- Créditos y Cuotas: `createCredit`, `updateCredit`, `updateCreditFields`, `getClientCreditsStream`, 
+  `getAllCreditsStream`, `deleteCredit`, `createInstallments`, `getInstallmentsStream`, `updateInstallment`, 
+  `updateInstallmentFields`, `getAllInstallmentsStream`, `deleteInstallment`.
+- Pagos: `registerPaymentTransaction`, `getPaymentsStream`, `getCollectorPaymentsStream`, `getAllPaymentsStream`, 
+  `deletePayment`, `updatePaymentFields`.
+- Tesorería, Inversiones y Gastos: `registerExpenseTransaction`, `updateExpense`, `deleteExpense`, `getTreasuryStream`, 
+  `getExpensesStream`, `registerInvestmentTransaction`, `updateInvestment`, `deleteInvestment`, 
+  `registerInvestorPaymentTransaction`, `deleteInvestorPaymentTransaction`, `updateInvestorPaymentTransaction`, 
+  `completeInvestment`, `getInvestmentsStream`, `getInvestorPaymentsStream`, `getAllInvestorPaymentsStream`, 
+  `registerCashAdjustment`, `getCashAdjustmentsStream`, `deleteCashAdjustment`.
+- Usuarios: `setUser`, `getUser`, `getAllUsersStream`, `getCollectorsStream`.
+- Citas: `createAppointment`, `updateAppointmentStatus`, `deleteAppointment`, `getAllAppointmentsStream`, `getCollectorAppointmentsStream`.
+- Auditoría y Recálculo: `autoScanMora`, `recalculateCreditHistory`.
+
+--------------------------------------------------------------------------------
+6.3 RBACService (lib/core/services/rbac_service.dart)
+--------------------------------------------------------------------------------
+Providers:
+- `rbacServiceProvider`: Provee el servicio `RbacService`.
+- `currentUserModelProvider`: StreamProvider reactivo que observa `authStateProvider` y emite en tiempo real 
+  el documento `UserModel?` del usuario autenticado desde Firestore.
+
+Métodos:
+- `Future<UserModel?> getCurrentUserModel(String uid)`: Lectura única del documento de usuario.
+- `Stream<UserModel?> getUserModelStream(String uid)`: Escucha cambios en tiempo real del documento del usuario.
+- `Future<bool> isAdmin(String uid)`: Evalúa si el usuario posee rol `admin`.
+- `Future<bool> collectorHasAccessToClient({required String collectorUid, required String clientId})`:
+  Verifica si el cobrador especificado figura dentro del array `assignedCollectorIds` del cliente.
+
+--------------------------------------------------------------------------------
+6.4 LocalNotificationService (lib/core/services/local_notification_service.dart)
+--------------------------------------------------------------------------------
+Patrón: Singleton (`LocalNotificationService._internal()`).
+Provider: `localNotificationServiceProvider`
+Provider Reactivo: `alarmSyncProvider` (se ejecuta automáticamente en segundo plano en dispositivos móviles).
+
+Propiedades y Métodos:
+- `static void Function(String? clientId)? onNotificationTapped`: Callback de redirección global.
+- `Future<void> initialize()`: Inicializa zonas horarias configurando `America/Bogota` (con fallback local), 
+  registra el icono `@mipmap/ic_launcher` en Android y enlaza el manejador de pulsación de notificaciones.
+- `Future<void> requestPermissions()`: Solicita permisos de notificación (Android 13+ POST_NOTIFICATIONS) 
+  y permiso de alarmas exactas (`SCHEDULE_EXACT_ALARM`).
+- `Future<void> scheduleAppointmentNotification(AppointmentModel appointment)`:
+  Programa una alarma exacta nativa con canal de máxima importancia ('loans_reminder_channel_id', vibración y sonido). 
+  Usa como payload el `clientId` para abrir la ficha técnica al hacer clic.
+- `Future<void> scheduleInstallmentNotification(InstallmentModel installment, String clientName, double remainingAmount)`:
+  Programa una alarma para el día del vencimiento a la hora y minuto configurados (`alarmHour`, `alarmMinute`). 
+  Selecciona entre canal sonoro ('loans_alarm_channel_id') o canal silencioso ('loans_silent_channel_id') 
+  según el valor de `isAlarmSilent`.
+- `Future<void> cancelNotification(int notificationId)`: Cancela una notificación programada en el sistema nativo.
+- `Future<void> syncAllAlarms({required List<AppointmentModel> appointments, required List<JoinedInstallment> installments})`:
+  SINCRONIZADOR GLOBAL NATIVO:
+  1. Consulta las alarmas pendientes programadas en el dispositivo mediante `pendingNotificationRequests()`.
+  2. Determina las alarmas que deberían estar activas (citas futuras no completadas y cuotas futuras con alarma habilitada).
+  3. Cancela alarmas obsoletas o de cuotas/citas que ya fueron pagadas o canceladas.
+  4. Programa las alarmas nuevas o modificadas.
+- `Future<void> syncDeviceAppointments(List<AppointmentModel> list)`: Envoltorio para compatibilidad.
+
+
+================================================================================
+7. UTILIDADES
+================================================================================
+
+--------------------------------------------------------------------------------
+7.1 CommercialCalendar (lib/core/utils/commercial_calendar.dart)
+--------------------------------------------------------------------------------
+Motor de cálculo de fechas bajo estándar financiero de año comercial de 360 días.
+Todos los métodos son estáticos:
+
+- `static DateTime addCommercialDays(DateTime date, int days)`:
+  Suma días comerciales a una fecha base.
+  Algoritmo:
+  1. Normaliza el día de entrada (si el día > 30, se toma como 30).
+  2. Convierte la fecha a una representación lineal de días: `totalDays = (year * 360) + ((month - 1) * 30) + day + days`.
+  3. Descompone `totalDays` en año (`totalDays ~/ 360`), mes y día.
+  4. Si el día resultante es 0, retrocede al día 30 del mes anterior.
+  5. Ajusta el día resultante para que nunca exceda el último día real del mes en el calendario gregoriano 
+     (por ejemplo en febrero ajusta a 28 o 29). Retorna la nueva fecha.
+- `static int commercialDaysBetween(DateTime from, DateTime to)`:
+  Calcula la distancia exacta en días comerciales entre dos fechas.
+  Normaliza días superiores a 30 a 30 y computa: `((to.year - from.year) * 360) + ((to.month - from.month) * 30) + (d2 - d1)`.
+- `static List<DateTime> generateInstallmentDates({required DateTime firstInstallmentDate, required int numberOfInstallments, required String frequency})`:
+  Genera la lista secuencial de fechas de vencimiento. Para frecuencia semanal suma intervalos de 7 días naturales 
+  (`Duration(days: 7)`). Para quincenal suma 15 días comerciales y para mensual suma 30 días comerciales mediante `addCommercialDays`.
+- `static int calculateNumberOfInstallments({required int termInMonths, required String frequency})`:
+  Calcula el número de cuotas a programar:
+  * Semanal (`weekly`): `termInMonths * 4` (4 semanas por mes comercial).
+  * Quincenal (`biweekly`): `termInMonths * 2` (2 quincenas por mes comercial).
+  * Mensual (`monthly`): `termInMonths`.
+- `static int _lastDayOfMonth(int year, int month)`:
+  Función auxiliar que determina el último día real del mes en el calendario gregoriano.
+
+--------------------------------------------------------------------------------
+7.2 MoraEngine (lib/core/utils/mora_engine.dart)
+--------------------------------------------------------------------------------
+Motor financiero matemático para la liquidación de mora y distribución de pagos.
+Clases y métodos:
+
+1. Clase `PaymentCascadeResult`:
+   Contenedor inmutable que almacena el resultado de una cascada de pagos:
+   - `remainingPayment` (double): Dinero sobrante tras saldar la deuda total (si aplica).
+   - `totalAppliedToMora` (double): Dinero total consumido en mora.
+   - `totalAppliedToInterest` (double): Dinero total consumido en intereses corrientes.
+   - `totalAppliedToPrincipal` (double): Dinero total consumido en amortización a capital.
+   - `updatedInstallments` (List<InstallmentModel>): Lista de cuotas con estados y saldos actualizados.
+   - `affectedInstallmentNumbers` (List<int>): Números de cuota impactadas.
+   - `installmentBreakdowns` (Map<String, Map<String, double>>): Desglose individual de mora, interés y capital por cuota.
+
+2. Método `updateMoraAndConsolidations`:
+   Firma: `static List<InstallmentModel> updateMoraAndConsolidations({required List<InstallmentModel> installments, required double dailyMoraRate, required DateTime targetDate})`
+   Algoritmo:
+   - Clona la lista de cuotas y las ordena por `installmentNumber`.
+   - Normaliza `targetDate` a medianoche.
+   - Para cada cuota no saldada (`remainingAmount > 0` y no pagada):
+     * Si `isMoraExempt == true`: Fija `accumulatedMora = moraPaid`, desactiva mora (`isMoraActive = false`), 
+       asigna estado `overdue` si la fecha venció o `pending`/`partial` según abonos.
+     * Si no está exenta: Calcula la fecha de inicio de mora (`moraStartDate ?? dueDate`).
+     * Si `targetDate > dueDate`: La cuota pasa a estado `overdue`. Si además `targetDate > moraStartDate`, 
+       calcula los días de atraso (`days = targetDate.difference(moraStartDate).inDays`).
+     * Si `days > 0`: `additionalMora = moraBase * dailyMoraRate * days`.
+     * Suma `additionalMora` a `accumulatedMora`, activa `isMoraActive = true` y avanza el cursor `moraStartDate = targetDate`.
+     * Si no ha vencido, mantiene `status = pending` o `partial` y desactiva la mora.
+   - Retorna la nueva lista proyectada.
+
+3. Método `applyPaymentCascade`:
+   Firma: `static PaymentCascadeResult applyPaymentCascade({required List<InstallmentModel> currentInstallments, required double paymentAmount, required DateTime paymentDate})`
+   CASCADA DE PAGO EN 3 PASOS:
+   - **PASO 1 (P1 - Prioridad Máxima: Mora Acumulada)**:
+     Recorre todas las cuotas activas de menor a mayor número. Si la cuota tiene mora pendiente (`unpaidMora = accumulatedMora - moraPaid > 0`), 
+     aplica el dinero disponible prioritariamente a cubrir esa mora antes de tocar capital o interés de cualquier cuota.
+   - **PASO 2 (P2 - Prioridad Secundaria: Capital e Interés Proporcional)**:
+     Con el dinero restante tras saldar la mora, recorre las cuotas pendientes en orden.
+     Para cada cuota, calcula la proporción de capital (`principalPortion / scheduledAmount`) e interés (`interestPortion / scheduledAmount`).
+     Abona de forma estrictamente proporcional a ambos componentes para no desfasar la amortización contable. 
+     Actualiza `paidAmount`, `remainingAmount` y `moraBase`.
+   - **PASO 3 (P3 - Consolidación de Estados y Fechas)**:
+     Verifica cada cuota afectada. Si `remainingAmount <= 0.01` y `moraPaid >= accumulatedMora`, la marca como `paid`. 
+     Si aún tiene saldo pendiente y su vencimiento ya pasó respecto a la fecha del pago, la clasifica como `overdue`, 
+     o `partial` si aún no ha vencido. Actualiza `moraStartDate = paymentDate` para reiniciar el contador de mora sobre el nuevo saldo base.
+
+4. Métodos de clonación:
+   - `_cloneInstallment(InstallmentModel inst)`: Duplica una cuota en memoria.
+   - `_cloneWith(InstallmentModel inst, {...})`: Modifica propiedades específicas preservando la inmutabilidad.
+
+
+================================================================================
+8. PANTALLAS DE INTERFAZ DE USUARIO (FEATURES)
+================================================================================
+
+--------------------------------------------------------------------------------
+8.1 Autenticación
+--------------------------------------------------------------------------------
+1. `AuthGate` (lib/features/auth/auth_gate.dart):
+   Widget centinela reactivo. Observa `authStateProvider`:
+   - Si no hay usuario autenticado (`user == null`), muestra `LoginScreen`.
+   - Si hay sesión activa, observa `currentUserModelProvider`:
+     * Si el usuario no existe en la colección `users` de Firestore, muestra una pantalla de "Acceso Denegado" 
+       con botón para cerrar sesión.
+     * Si el rol es `admin`, redirige a `AdminDashboard`.
+     * Si el rol es `cobrador`, redirige a `CobradorDashboard`.
+
+2. `LoginScreen` (lib/features/auth/login_screen.dart):
+   Formulario de ingreso con diseño glassmorphic y fondo con circuito animado (`CircuitBackgroundPainter`).
+   - Campos: Correo electrónico y Contraseña con visibilidad alternable.
+   - Botón de alternancia de tema (Claro/Oscuro).
+   - Traducción completa de códigos de error de Firebase Auth al español (`user-not-found`, `wrong-password`, 
+     `invalid-email`, `user-disabled`, `too-many-requests`).
+   - Restricción visual de ancho máximo (440px) para óptima visualización en pantallas móviles y de escritorio.
+
+--------------------------------------------------------------------------------
+8.2 Tableros / Dashboards
+--------------------------------------------------------------------------------
+1. `AdminDashboard` (lib/features/dashboard/admin_dashboard.dart):
+   Panel de control del administrador.
+   - Al iniciar (`initState`), ejecuta en segundo plano `autoScanMora()` para actualizar moras en toda la base de datos.
+   - Activa el auto-sincronizador de alarmas locales (`alarmSyncProvider`).
+   - Banner de bienvenida con degradado azul oscuro, nombre del administrador y badge "🔑 Administrador — Acceso Total".
+   - Botón superior con `AlertCenterWidget` para visualización inmediata de alertas financieras.
+   - Rejilla responsiva con 6 módulos principales:
+     * Clientes -> Navega a `ClientListScreen`
+     * Créditos -> Navega a `CreditListScreen`
+     * Cobradores -> Navega a `UserListScreen`
+     * Informes -> Navega a `ReportsMainScreen`
+     * Calendario -> Navega a `PaymentCalendarScreen`
+     * Configuración -> Navega a `SettingsScreen`
+
+2. `CobradorDashboard` (lib/features/dashboard/cobrador_dashboard.dart):
+   Panel de control simplificado y enfocado en trabajo de campo.
+   - Al iniciar, también ejecuta `autoScanMora()` sobre sus créditos.
+   - Banner de bienvenida que indica el número exacto de clientes asignados.
+   - Rejilla de 6 tarjetas operativas:
+     * Mis Clientes -> `ClientListScreen` (filtrado por sus clientes asignados).
+     * Registrar Pago -> Despliega un flujo modal guiado en dos pasos:
+       Paso 1: Bottom sheet con sus clientes asignados.
+       Paso 2: Bottom sheet con los créditos activos del cliente seleccionado (si solo tiene 1, salta directo al formulario de pago).
+       Navega a `PaymentFormScreen`.
+     * Historial -> `PaymentsHistoryScreen` (abonos registrados por él).
+     * Mi Calendario -> `PaymentCalendarScreen`.
+     * Reportes de Cobro -> `ReportsMainScreen`.
+     * Agenda de Citas -> `AppointmentsAgendaScreen`.
+
+--------------------------------------------------------------------------------
+8.3 Módulo de Clientes
+--------------------------------------------------------------------------------
+1. `ClientListScreen` (lib/features/clients/client_list_screen.dart):
+   Listado maestro de clientes con barra de búsqueda en tiempo real por nombre o documento.
+   - Filtros de estado: Todos, Activos, Al Día, En Mora, Inactivos.
+   - Ordenamiento: Alfabético o Cronológico por fecha de creación.
+   - Persistencia de preferencias de orden y filtros en `SharedPreferences`.
+   - Indicadores de estado financiero mediante código de colores en tarjetas.
+   - Botón flotante para crear nuevo cliente (exclusivo para admin).
+
+2. `ClientDetailScreen` (lib/features/clients/client_detail_screen.dart):
+   Ficha técnica integral del cliente organizada en dos columnas responsivas en escritorio.
+   - Tarjeta de información personal con avatar, teléfono, dirección y cobradores asignados.
+   - Sección de Citas y Visitas con opción de agendar nueva cita con alarma nativa.
+   - Sección de Créditos del cliente con filtros por estado (`active`, `completed`, `defaulted`).
+   - Acciones de administrador: Editar cliente, Eliminar cliente (con confirmación de seguridad), 
+     Crear nuevo crédito y Programar cita.
+
+3. `ClientFormScreen` (lib/features/clients/client_form_screen.dart):
+   Formulario de creación y edición de clientes.
+   - Campos validados: Nombre completo, Documento de identidad, Teléfono, Dirección.
+   - Selector multiselección con checkboxes para asignar cobradores responsables.
+   - Diálogo de advertencia destructiva si se desasigna un cobrador que ya tenía clientes a cargo.
+
+--------------------------------------------------------------------------------
+8.4 Módulo de Créditos
+--------------------------------------------------------------------------------
+1. `CreditListScreen` (lib/features/credits/credit_list_screen.dart):
+   Directorio de créditos con buscador y filtros por estado (`Todos`, `Activos`, `Al Día`, `En Mora`, `Cancelados`).
+   - Vista responsiva: Lista compacta en móviles y cuadrícula de tarjetas financieras en escritorio.
+   - Botón flotante para nuevo crédito con bottom sheet de selección de cliente.
+
+2. `CreditFormScreen` (lib/features/credits/credit_form_screen.dart):
+   Simulador y originador de préstamos con panel de proyección financiera en tiempo real.
+   - Parámetros de entrada: Capital prestado, Tasa de interés mensual (def. 10%), Tasa de mora diaria (def. 0.7%), 
+     Plazo en meses, Frecuencia de cobro (`weekly`, `biweekly`, `monthly`), Fecha de desembolso y Fecha de primera cuota.
+   - Cálculos en vivo: Generación automática de cuotas con `CommercialCalendar`, ajuste de centavos/residuo en la última cuota, 
+     total de intereses y valor de cada cuota periódica.
+   - Al confirmar, genera el crédito y todas sus cuotas en Firestore de forma atómica.
+
+3. `CreditDetailScreen` (lib/features/credits/credit_detail_screen.dart):
+   PANTALLA MÁS COMPLEJA DEL SISTEMA.
+   - Tarjeta financiera con barra de progreso, capital, intereses, mora acumulada generada, total general y saldo pendiente.
+   - Comprobación automática de versión de esquema matemático: si `schemaVersion < 3`, dispara `forceRebuildAndMigrateCredit`.
+   - Proyección de mora en tiempo real para visualización exacta al segundo actual.
+   - Pestaña 1: "Plan de Pagos" -> Tabla o lista detallada de cada cuota mostrando número, fecha de vencimiento, 
+     porción de capital, porción de interés, mora acumulada, estado y botón de exención/condonación de mora (admin).
+     Configuración de alarma individual por cuota.
+   - Pestaña 2: "Historial de Abonos" -> Listado cronológico de pagos recibidos con desglose de distribución (mora, interés, capital).
+   - Acciones de Administrador: Editar parámetros del crédito (recalcula automáticamente el historial), 
+     Editar abonos registrados, Eliminar abonos (con reversión transaccional completa y restitución de tesorería), 
+     y Eliminar crédito completo.
+
+--------------------------------------------------------------------------------
+8.5 Módulo de Pagos
+--------------------------------------------------------------------------------
+1. `PaymentFormScreen` (lib/features/payments/payment_form_screen.dart):
+   Simulador y registrador de recaudos en tiempo real.
+   - Al ingresar el monto recibido en la caja de texto, ejecuta en memoria `MoraEngine.applyPaymentCascade` 
+     mostrando al instante cómo se distribuirá el dinero: Prioridad 1 (Mora), Prioridad 2 (Interés), Prioridad 3 (Capital).
+   - Lista visual de cuotas que serán impactadas y si quedarán completamente pagadas o con saldo parcial.
+   - Selección de método de pago: Efectivo, Transferencia, Otro.
+   - Selector de fecha de pago (habilitado solo para administradores; cobradores registran con fecha actual).
+   - Al enviar, ejecuta `registerPaymentTransaction` garantizando atomicidad transaccional.
+
+2. `PaymentsHistoryScreen` (lib/features/payments/payments_history_screen.dart):
+   Historial consolidado de recaudos con buscador por recibo o cliente.
+   - Filtros por método de pago y rango de fechas.
+   - Botón de compartir recibo vía WhatsApp (`url_launcher` con formato codificado y mensaje configurable desde `SettingsScreen`).
+   - Botón de compartir recibo mediante menú del sistema operativo (`share_plus`).
+
+--------------------------------------------------------------------------------
+8.6 Módulo de Citas y Visitas
+--------------------------------------------------------------------------------
+1. `AppointmentFormDialog` (lib/features/appointments/appointment_form_dialog.dart):
+   Diálogo modal para programar visitas o llamadas.
+   - Validación estricta de fecha y hora futura.
+   - Vinculación opcional a un crédito específico.
+   - Al guardar, programa automáticamente la alarma nativa en el dispositivo móvil mediante `LocalNotificationService`.
+
+2. `AppointmentsAgendaScreen` (lib/features/appointments/appointments_agenda_screen.dart):
+   Agenda de compromisos con dos pestañas: "Pendientes" y "Completadas".
+   - Sincroniza alarmas del dispositivo al abrir.
+   - Marcar como completada con un solo toque.
+   - Insignia de advertencia si la cita se encuentra retrasada o vencida.
+   - Botón de eliminación con confirmación.
+
+--------------------------------------------------------------------------------
+8.7 Módulo de Calendario
+--------------------------------------------------------------------------------
+1. `PaymentCalendarScreen` (lib/features/calendar/payment_calendar_screen.dart):
+   Calendario mensual interactivo con indicadores visuales por día:
+   * Puntos azules: Desembolsos realizados.
+   * Puntos rojos: Cuotas en mora o vencidas.
+   * Puntos amarillos: Cuotas pendientes próximas a vencer.
+   * Puntos verdes: Cuotas completamente pagadas.
+   - Al tocar un día, despliega la lista de cuotas correspondientes y permite configurar la alarma nativa (hora, minuto, sonido on/off).
+
+2. `calendar_providers.dart` (lib/features/calendar/calendar_providers.dart):
+   Capa de unión de datos (Join en memoria):
+   - Clase `JoinedInstallment`: Agrupa en un solo objeto `InstallmentModel`, `CreditModel` y `ClientModel`.
+   - Provider `joinedInstallmentsProvider`: Ejecuta un join O(1) entre cuotas, créditos y clientes, 
+     y aplica en tiempo real `MoraEngine.updateMoraAndConsolidations` proyectando la mora a hoy antes de pintar el calendario.
+   - Provider `allPaymentsProvider`: Expone todos los pagos aplicando filtros de seguridad según el rol.
+
+--------------------------------------------------------------------------------
+8.8 Módulo de Notificaciones y Alertas
+--------------------------------------------------------------------------------
+- `AlertCenterWidget` (lib/features/notifications/alert_center_widget.dart):
+  Widget de campana con contador numérico (badge).
+  - Analiza cuotas vencidas (`overdue`), cuotas que vencen hoy y cuotas que vencen mañana.
+  - Al presionar, despliega un bottom sheet priorizado donde cada alerta permite navegar directamente 
+    al detalle del crédito correspondiente.
+
+--------------------------------------------------------------------------------
+8.9 Módulo de Informes Financieros
+--------------------------------------------------------------------------------
+1. `ReportsMainScreen` (lib/features/reports/reports_main_screen.dart):
+   Contenedor principal con 5 pestañas de reportes de alta fidelidad:
+   - Tab 1: Pagos y Ganancias (`ProfitReportScreen`).
+   - Tab 2: Capital y Cartera (`HistoricalPortfolioReportScreen`).
+   - Tab 3: Balance General (`BalanceSheetReportScreen`).
+   - Tab 4: Programación de Pagos (`UpcomingPaymentsReportScreen`).
+   - Tab 5: Desembolsos y Saldos (`DisbursementsReportScreen`).
+
+2. `ProfitReportScreen` (lib/features/reports/profit_report_screen.dart):
+   Análisis de rentabilidad.
+   - Tarjetas de utilidad bruta, neta y gastos operativos.
+   - Gráfico de barras de ingresos brutos vs gastos netos por período.
+   - Gráfico tipo dona (Donut Chart) con desglose de ingresos por Interés Corriente vs Mora Cobrada.
+   - Resumen de capital activo colocado.
+
+3. `HistoricalPortfolioReportScreen` (lib/features/reports/historical_portfolio_report_screen.dart):
+   Seguimiento de la evolución de la cartera.
+   - Gráfico temporal de 5 líneas con seguimiento de capital prestado, capital recuperado, intereses cobrados, mora y saldo vivo.
+   - Tabla interactiva de 16 columnas con créditos activos, ordenable por cualquier columna y exportable.
+
+4. `BalanceSheetReportScreen` (lib/features/reports/balance_sheet_report_screen.dart):
+   Estado de situación financiera (Balance General):
+   - Activos: Caja actual, Cartera de capital activo, Intereses por cobrar y Mora acumulada por cobrar.
+   - Pasivos: Deuda con inversores (capital pendiente de devolución).
+   - Patrimonio Neto: Activos Totales - Pasivos Totales.
+   - Cálculo del indicador ROE (Return on Equity).
+   - Gráfico de dona con la distribución porcentual de los activos.
+
+5. `UpcomingPaymentsReportScreen` (lib/features/reports/upcoming_payments_report_screen.dart):
+   Flujo de caja proyectado:
+   - Cuotas esperadas vs cuotas efectivamente recaudadas.
+   - Tabla con ordenamiento multinivel por fecha de vencimiento, cliente o monto.
+   - Gráfico histórico de cumplimiento de cobros.
+
+6. `DisbursementsReportScreen` (lib/features/reports/disbursements_report_screen.dart):
+   Análisis de colocación de préstamos:
+   - Gráfico de barras apiladas (Stacked Bar Chart) mostrando colocación de capital, proyección de intereses y mora.
+   - Filtros de resolución temporal: Semanal, Mensual, Anual.
+   - Tabla detallada de desembolsos.
+
+--------------------------------------------------------------------------------
+8.10 Módulo de Configuración
+--------------------------------------------------------------------------------
+- `SettingsScreen` (lib/features/settings/settings_screen.dart):
+  Panel de configuración de parámetros del sistema.
+  - Configuración de la plantilla del mensaje introductorio de WhatsApp que acompaña los recibos de cobro y reportes.
+  - Almacenamiento persistente inmediato en `SharedPreferences`.
+
+--------------------------------------------------------------------------------
+8.11 Módulo de Tesorería
+--------------------------------------------------------------------------------
+- `TreasuryScreen` (lib/features/treasury/treasury_screen.dart):
+  Centro de control de liquidez corporativa organizado en 3 pestañas:
+  1. Pestaña "Caja General":
+     * Muestra saldo en efectivo disponible en tiempo real.
+     * Filtro por períodos: 'Histórico', 'Este Mes', 'Mes Pasado', 'Rango Personalizado'.
+     * Botón de Sincronización y Recálculo Financiero global.
+     * CRUD completo de Ajustes Manuales de Caja (`CashAdjustmentModel` para corregir descuadres físicos).
+  2. Pestaña "Inversores":
+     * Listado de inversores y capital aportado.
+     * Registro de aportes nuevos (`registerInvestmentTransaction`).
+     * Registro de pagos al inversor diferenciando entre pago de rentabilidad/interés y devolución de capital principal.
+     * Finalización/liquidación de inversiones.
+  3. Pestaña "Gastos Operativos":
+     * Registro y control de gastos de la empresa.
+     * Categorías predefinidas: Papelería, Transporte, Viáticos, Mantenimiento, Nómina, Servicios, Publicidad, Otros.
+     * Impacto automático e inmediato sobre el saldo de caja y los reportes de pérdidas y ganancias.
+
+--------------------------------------------------------------------------------
+8.12 Módulo de Gestión de Usuarios
+--------------------------------------------------------------------------------
+1. `UserListScreen` (lib/features/users/user_list_screen.dart):
+   Directorio de administradores y cobradores con insignias de rol, estado activo/inactivo 
+   y botón rápido para habilitar o inhabilitar operadores.
+2. `UserFormScreen` (lib/features/users/user_form_screen.dart):
+   Creación y edición de cuentas de usuario.
+   - Crea atómicamente la cuenta en Firebase Authentication (`AuthService.createUserWithEmailAndPassword`) 
+     y el documento en Firestore (`users/{uid}`).
+   - Generador automático de contraseñas seguras con botón 'Generar'.
+   - Asignación de clientes mediante lista de checkboxes.
+
+--------------------------------------------------------------------------------
+8.13 Componentes Compartidos y Temas
+--------------------------------------------------------------------------------
+1. `financial_providers.dart` (lib/features/shared/financial_providers.dart):
+   Única Fuente de Verdad (SSOT - Single Source of Truth) para la contabilidad del sistema.
+   - Provee streams para tesorería, gastos, inversiones, pagos a inversores y ajustes de caja.
+   - Clase `FinancialMetrics`:
+     Método `calculate(...)`: Realiza la consolidación integral de caja actual, cartera activa, 
+     intereses por cobrar, mora acumulada, deuda con inversores, patrimonio neto y utilidad neta. 
+     Aplica la fecha de corte normativa contable `cutoffDate = DateTime(2026, 7, 1)` para segregar 
+     movimientos históricos de la operación corriente.
+2. `ResponsiveSidebarScaffold` (lib/shared/theme/responsive_sidebar_scaffold.dart):
+   Estructura de navegación adaptativa: muestra una barra lateral permanente (Navigation Rail / Sidebar) 
+   en pantallas de escritorio y una barra de navegación inferior (BottomNavigationBar) en dispositivos móviles.
+3. `GlassmorphicContainer`:
+   Contenedor con efecto de vidrio esmerilado (desenfoque gaussiano, bordes semitransparentes y sombras suaves) 
+   utilizado en diálogos y tarjetas destacadas.
+4. `AppTheme` (lib/shared/theme/app_theme.dart):
+   Configuración centralizada de temas claro y oscuro con colores primarios azules/índigo (`0xFF1A73E8`), 
+   fondos oscuros modernos (`0xFF121724`, `0xFF1E2638`), tipografías corporativas y estilos de botones.
+5. `CircuitBackgroundPainter` (lib/shared/theme/circuit_background_painter.dart):
+   Pintor personalizado (`CustomPainter`) que dibuja líneas y nodos geométricos tecnológicos sutiles en el fondo de inicio de sesión.
+
+
+================================================================================
+9. REGLAS DE SEGURIDAD FIRESTORE (firestore.rules)
+================================================================================
+
+El archivo `firestore.rules` define la seguridad a nivel de base de datos en la nube, 
+garantizando que ninguna operación no autorizada pueda ejecutarse incluso si el cliente 
+es vulnerado.
+
+9.1 Funciones de Validación (Helpers)
+--------------------------------------------------------------------------------
+- `isAuthenticated()`: `request.auth != null`
+- `userRole()`: Lee el campo `role` del documento del usuario autenticado en `/users/$(request.auth.uid)`.
+- `isAdmin()`: Verifica si el usuario está autenticado y cumple alguna de las siguientes condiciones:
+  1. Su correo en el token JWT es `admin@gestor.com`.
+  2. Su documento en `/users/$(request.auth.uid)` existe y su campo `email` es `admin@gestor.com`.
+  3. Su campo `role` es `'admin'`.
+  4. Su campo `isAdmin` es `true`.
+- `isCobrador()`: Verifica autenticación y que `userRole() == 'cobrador'`.
+- `isAssignedCollector(clientData)`: Verifica si el UID autenticado está contenido en la lista `clientData.assignedCollectorIds`.
+- `canViewAllClientPayments()`: Verifica si el usuario posee la bandera `canViewAllClientPayments == true`.
+
+9.2 Políticas de Seguridad por Colección
+--------------------------------------------------------------------------------
+1. Colección `/users/{userId}`:
+   - Lectura: Permitida a administradores o al propio usuario dueño del documento (`request.auth.uid == userId`).
+   - Escritura: Exclusiva para administradores.
+
+2. Colección `/clients/{clientId}`:
+   - Lectura: Permitida a administradores o a cobradores asignados a ese cliente (`isAssignedCollector(resource.data)`).
+   - Creación y Actualización: Exclusiva para administradores.
+   - Eliminación: Bloqueada por reglas de seguridad (`allow delete: if false`).
+
+3. Colección `/credits/{creditId}`:
+   - Lectura: Permitida si es admin o si es cobrador asignado (`request.auth.uid in resource.data.assignedCollectorIds`).
+   - Creación: Exclusiva para administradores.
+   - Eliminación: Bloqueada (`if false`).
+   - Actualización: Permitida a administradores y a cobradores asignados (para permitir registro de abonos y recálculos).
+   
+   Subcolección `/installments/{installmentId}`:
+   - Lectura: Permitida a admin o cobrador asignado en el crédito padre.
+   - Creación: Exclusiva para administradores.
+   - Eliminación: Bloqueada (`if false`).
+   - Actualización: Permitida a admin o cobrador asignado.
+
+   Subcolección `/payments/{paymentId}`:
+   - Lectura: Permitida a admin, o al cobrador que registró el pago (`registeredByUid == request.auth.uid`), 
+     o a cobradores con permiso `canViewAllClientPayments` asignados al crédito.
+   - Creación: Permitida a admin o a cobradores asignados al crédito.
+   - Actualización y Eliminación: Exclusiva para administradores.
+
+4. Reglas Globales de Grupo de Colecciones (Collection Group Queries):
+   - `/{path=**}/payments/{paymentId}`: Permite a cobradores consultar únicamente los pagos donde `registeredByUid == request.auth.uid`.
+   - `/{path=**}/installments/{installmentId}`: Lectura y escritura bloqueada para cobradores globales (deben consultar vía subcolección local). Permitida a admin.
+   - `/{path=**}/investor_payments/{paymentId}`: Exclusiva para administradores.
+
+5. Colección `/appointments/{appointmentId}`:
+   - Lectura, Creación y Actualización: Permitida a admin o al cobrador asignado (`resource.data.collectorId == request.auth.uid`).
+   - Eliminación: Bloqueada (`if false`).
+
+6. Colección `/appConfig/{configId}`:
+   - Lectura: Permitida a cualquier usuario autenticado.
+   - Escritura: Exclusiva para administradores.
+
+7. Colección `/treasury/{document}`:
+   - Lectura: Exclusiva para administradores.
+   - Escritura: Permitida a administradores y cobradores (para actualizar saldo de caja en cobros).
+
+8. Colecciones `/expenses/{expenseId}`, `/investments/{investmentId}` y `/cash_adjustments/{adjustmentId}`:
+   - Lectura y Escritura: Exclusiva para administradores.
+
+================================================================================
+FIN DE LA DOCUMENTACIÓN COMPLETA DE FUNCIONALIDAD
+================================================================================
